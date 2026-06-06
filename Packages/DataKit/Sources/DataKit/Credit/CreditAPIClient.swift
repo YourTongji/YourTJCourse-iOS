@@ -95,7 +95,7 @@ public struct CreditAPIClient: Sendable {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
 
-        logger.debug("[\(method)] \(url.absoluteString)")
+        logger.debug("[\(method)] \(self.redactedURLForLogging(url))")
 
         let (data, response): (Data, URLResponse)
         do {
@@ -112,7 +112,7 @@ public struct CreditAPIClient: Sendable {
             throw APIError.invalidResponse
         }
 
-        logger.debug("\(method) \(url.absoluteString) → \(http.statusCode) (\(data.count) bytes)")
+        logger.debug("\(method) \(self.redactedURLForLogging(url)) → \(http.statusCode) (\(data.count) bytes)")
         guard (200...299).contains(http.statusCode) else {
             throw decodeError(data, statusCode: http.statusCode)
         }
@@ -139,6 +139,16 @@ public struct CreditAPIClient: Sendable {
             return APIError.httpError(statusCode: statusCode, message: response.error ?? response.message)
         }
         return APIError.httpError(statusCode: statusCode, message: nil)
+    }
+
+    private func redactedURLForLogging(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url.path
+        }
+        if components.query != nil {
+            components.percentEncodedQuery = "redacted"
+        }
+        return components.string ?? url.path
     }
 }
 

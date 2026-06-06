@@ -174,7 +174,7 @@ public final class APIClient: Sendable {
             }
         }
 
-        logger.debug("[\(method)] \(url.absoluteString)")
+        logger.debug("[\(method)] \(self.redactedURLForLogging(url))")
 
         let (data, response): (Data, URLResponse)
         do {
@@ -191,7 +191,7 @@ public final class APIClient: Sendable {
             throw APIError.invalidResponse
         }
 
-        logger.debug("\(method) \(url.absoluteString) → \(httpResponse.statusCode) (\(data.count) bytes)")
+        logger.debug("\(method) \(self.redactedURLForLogging(url)) → \(httpResponse.statusCode) (\(data.count) bytes)")
 
         try validate(statusCode: httpResponse.statusCode, data: data)
         return data
@@ -271,6 +271,16 @@ public final class APIClient: Sendable {
             return nil
         }
         return payload.error?.nonEmptyTrimmed ?? payload.message?.nonEmptyTrimmed
+    }
+
+    private func redactedURLForLogging(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url.path
+        }
+        if components.query != nil {
+            components.percentEncodedQuery = "redacted"
+        }
+        return components.string ?? url.path
     }
 
     private func decode<T: Decodable>(_ data: Data, for path: String) throws -> T {
