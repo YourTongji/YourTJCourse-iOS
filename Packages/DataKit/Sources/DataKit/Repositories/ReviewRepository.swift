@@ -58,11 +58,10 @@ public struct ReviewRepository: Sendable {
     ///   - reviewId: The review ID.
     ///   - editToken: The HMAC-SHA256 edit token.
     ///   - walletUserHash: The wallet user hash for authorization.
-    /// - Returns: `true` if the token was registered successfully.
-    public func setEditToken(reviewId: Int, editToken: String, walletUserHash: String) async throws -> Bool {
+    /// - Returns: The server response, including any credit reward status.
+    public func setEditToken(reviewId: Int, editToken: String, walletUserHash: String) async throws -> EditTokenResponse {
         let body = EditTokenRequest(editToken: editToken, walletUserHash: walletUserHash)
-        let response: SuccessResponse = try await client.patch("/api/review/\(reviewId)/edit-token", body: body)
-        return response.success
+        return try await client.patch("/api/review/\(reviewId)/edit-token", body: body)
     }
 
     // MARK: - Update Review
@@ -231,6 +230,11 @@ public struct CreditRewardStatus: Codable, Sendable {
     public let ok: Bool
     public let skipped: Bool?
     public let error: String?
+}
+
+public struct EditTokenResponse: Codable, Sendable {
+    public let success: Bool
+    public let creditReward: CreditRewardStatus?
 }
 
 public struct LikeResponse: Codable, Sendable {

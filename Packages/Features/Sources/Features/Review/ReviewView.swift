@@ -73,6 +73,14 @@ public struct ReviewView: View {
                         .autocapitalization(.none)
                 }
 
+                if viewModel.mode == .edit {
+                    Section {
+                        Label("编辑会使用本机积分钱包进行鉴权", systemImage: "wallet.pass")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 // MARK: - Error Section
 
                 if let error = viewModel.error {
@@ -123,10 +131,16 @@ public struct ReviewView: View {
                 .presentationDetents([.medium, .large])
             }
             .interactiveDismissDisabled(viewModel.isSubmitting)
-            .onChange(of: viewModel.success) { _, success in
-                if success {
+            .alert("完成", isPresented: .init(
+                get: { viewModel.successMessage != nil },
+                set: { if !$0 { viewModel.dismissSuccess() } }
+            )) {
+                Button("好") {
+                    viewModel.dismissSuccess()
                     dismiss()
                 }
+            } message: {
+                Text(viewModel.successMessage ?? "")
             }
         }
     }

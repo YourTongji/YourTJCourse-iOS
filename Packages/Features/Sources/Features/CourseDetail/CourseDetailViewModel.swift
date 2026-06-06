@@ -16,6 +16,7 @@ public final class CourseDetailViewModel {
     let courseId: Int
     private let courseRepo: CourseRepository
     private let reviewRepo: ReviewRepository
+    private let walletRepo: WalletRepository
     private let hiddenReviewStore: HiddenReviewStore
     private let config = APIConfig.default
     private let logger = AppLogger(category: "CourseDetail")
@@ -24,17 +25,23 @@ public final class CourseDetailViewModel {
         courseId: Int,
         courseRepo: CourseRepository = .init(),
         reviewRepo: ReviewRepository = .init(),
+        walletRepo: WalletRepository = .init(),
         hiddenReviewStore: HiddenReviewStore = .init()
     ) {
         self.courseId = courseId
         self.courseRepo = courseRepo
         self.reviewRepo = reviewRepo
+        self.walletRepo = walletRepo
         self.hiddenReviewStore = hiddenReviewStore
         self.hiddenReviewIds = hiddenReviewStore.load()
     }
 
     public var visibleReviews: [Review] {
         courseDetail?.reviews.filter { !hiddenReviewIds.contains($0.id) } ?? []
+    }
+
+    public var canAttemptReviewEdits: Bool {
+        walletRepo.hasWallet()
     }
 
     public func load() async {

@@ -18,6 +18,7 @@ public final class ReviewViewModel {
     public private(set) var isSubmitting = false
     public private(set) var error: String?
     public private(set) var success = false
+    public private(set) var successMessage: String?
     public private(set) var needsCaptcha = true
 
     let courseId: Int
@@ -82,43 +83,55 @@ public final class ReviewViewModel {
                     courseId: courseId,
                     rating: rating,
                     comment: comment.trimmingCharacters(in: .whitespacesAndNewlines),
-                    semester: semester,
+                    semester: normalizedSemester,
                     turnstileToken: captchaToken,
                     reviewerName: reviewerName.isEmpty ? nil : reviewerName,
                     reviewerAvatar: reviewerAvatar.isEmpty ? nil : reviewerAvatar,
                     walletUserHash: wallet?.userHash
                 )
 
-                // If wallet exists, set edit token automatically
+                var message = "评价提交成功"
                 if let reviewId = response.reviewId, let wallet {
                     let token = HMACHelper.editToken(
                         reviewId: reviewId, userSecret: wallet.userSecret)
-                    let _ = try? await reviewRepo.setEditToken(
-                        reviewId: reviewId,
-                        editToken: token,
-                        walletUserHash: wallet.userHash
-                    )
+                    do {
+                        let tokenResponse = try await reviewRepo.setEditToken(
+                            reviewId: reviewId,
+                            editToken: token,
+                            walletUserHash: wallet.userHash
+                        )
+                        message = successMessage(for: tokenResponse.creditReward)
+                    } catch {
+                        logger.error("Failed to bind edit token: \(error.localizedDescription)")
+                        message = "评价已提交，但钱包绑定失败：\(error.localizedDescription)"
+                    }
                 }
+                successMessage = message
                 success = true
 
             case .edit:
-                guard let review = existingReview else { return }
-
-                let editToken: String? = wallet.map { wallet in
-                    HMACHelper.editToken(reviewId: review.id, userSecret: wallet.userSecret)
+                guard let review = existingReview else {
+                    throw APIError.invalidResponse
                 }
+
+                guard let wallet else {
+                    throw APIError.unauthorized
+                }
+
+                let editToken = HMACHelper.editToken(reviewId: review.id, userSecret: wallet.userSecret)
 
                 let _ = try await reviewRepo.updateReview(
                     reviewId: review.id,
                     rating: rating,
                     comment: comment.trimmingCharacters(in: .whitespacesAndNewlines),
-                    semester: semester,
+                    semester: normalizedSemester,
                     turnstileToken: captchaToken,
                     editToken: editToken,
-                    walletUserHash: wallet?.userHash,
+                    walletUserHash: wallet.userHash,
                     reviewerName: reviewerName.isEmpty ? nil : reviewerName,
                     reviewerAvatar: reviewerAvatar.isEmpty ? nil : reviewerAvatar
                 )
+                successMessage = "评价修改成功"
                 success = true
             }
         } catch {
@@ -131,5 +144,26 @@ public final class ReviewViewModel {
 
     public func dismissError() {
         error = nil
+    }
+
+    public func dismissSuccess() {
+        successMessage = nil
+    }
+
+    private var normalizedSemester: String {
+        let value = semester.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? "其他" : value
+    }
+
+    private func successMessage(for reward: CreditRewardStatus?) -> String {
+        guard let reward else { return "评价提交成功" }
+        if reward.ok {
+            return "评价提交成功，评课激励 +10 已发放到积分钱包"
+        }
+        if reward.skipped == true {
+            return "评价提交成功"
+        }
+        let suffix = reward.error.map { "：\($0)" } ?? ""
+        return "评价提交成功，但评课激励发放失败\(suffix)"
     }
 }

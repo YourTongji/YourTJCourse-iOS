@@ -9,6 +9,8 @@ public struct CourseDetailView: View {
     @State private var selectedReviewId: Int?
     @State private var reviewIdPendingHide: Int?
     @State private var reportMessage: String?
+    @State private var showReviewSheet = false
+    @State private var reviewToEdit: Review?
 
     public init(courseId: Int) {
         self._viewModel = State(initialValue: CourseDetailViewModel(courseId: courseId))
@@ -33,6 +35,22 @@ public struct CourseDetailView: View {
         .task { await viewModel.load() }
         .sheet(isPresented: $showReportSheet) {
             reportSheet
+        }
+        .sheet(isPresented: $showReviewSheet) {
+            ReviewView(courseId: viewModel.courseId)
+        }
+        .sheet(item: $reviewToEdit) { review in
+            ReviewView(courseId: viewModel.courseId, existingReview: review)
+        }
+        .onChange(of: showReviewSheet) { _, isPresented in
+            if !isPresented {
+                Task { await viewModel.refresh() }
+            }
+        }
+        .onChange(of: reviewToEdit) { _, review in
+            if review == nil {
+                Task { await viewModel.refresh() }
+            }
         }
         .confirmationDialog(
             "隐藏这条评价？",
@@ -81,6 +99,15 @@ public struct CourseDetailView: View {
                     }
                 }
 
+                HStack {
+                    Spacer()
+                    Button(action: { showReviewSheet = true }) {
+                        Label("写评价", systemImage: "square.and.pencil")
+                    }
+                    .buttonStyle(.glassProminent)
+                    .padding(.horizontal)
+                }
+
                 let visibleReviews = viewModel.visibleReviews
                 if visibleReviews.isEmpty {
                     EmptyStateView(
@@ -97,7 +124,11 @@ public struct CourseDetailView: View {
                         ForEach(visibleReviews) { review in
                             ReviewCard(
                                 review: review,
+                                canEdit: viewModel.canAttemptReviewEdits,
                                 onLike: { Task { await viewModel.toggleLike(for: review.id) } },
+                                onEdit: {
+                                    reviewToEdit = review
+                                },
                                 onHide: {
                                     reviewIdPendingHide = review.id
                                 },
@@ -264,7 +295,9 @@ public struct CourseDetailView: View {
 
 struct ReviewCard: View {
     let review: Review
+    let canEdit: Bool
     let onLike: () -> Void
+    let onEdit: () -> Void
     let onHide: () -> Void
     let onReport: () -> Void
 
@@ -307,6 +340,19 @@ struct ReviewCard: View {
                 .buttonStyle(.plain)
 
                 Spacer()
+
+                if canEdit {
+                    Button(action: onEdit) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "pencil")
+                                .font(.caption)
+                            Text("编辑")
+                                .font(.caption)
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 Button(action: onHide) {
                     HStack(spacing: 4) {
@@ -362,7 +408,9 @@ struct ReviewCard: View {
             reviewerName: "张同学",
             reviewerAvatar: nil
         ),
+        canEdit: true,
         onLike: {},
+        onEdit: {},
         onHide: {},
         onReport: {}
     )
@@ -385,7 +433,9 @@ struct ReviewCard: View {
             reviewerName: "李同学",
             reviewerAvatar: "https://i.pravatar.cc/80?u=li"
         ),
+        canEdit: true,
         onLike: {},
+        onEdit: {},
         onHide: {},
         onReport: {}
     )
