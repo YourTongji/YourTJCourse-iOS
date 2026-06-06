@@ -7,6 +7,7 @@ public struct CourseDetailView: View {
     @State private var viewModel: CourseDetailViewModel
     @State private var showReportSheet = false
     @State private var selectedReviewId: Int?
+    @State private var reviewIdPendingHide: Int?
     @State private var reportMessage: String?
 
     public init(courseId: Int) {
@@ -32,6 +33,26 @@ public struct CourseDetailView: View {
         .task { await viewModel.load() }
         .sheet(isPresented: $showReportSheet) {
             reportSheet
+        }
+        .confirmationDialog(
+            "隐藏这条评价？",
+            isPresented: .init(
+                get: { reviewIdPendingHide != nil },
+                set: { if !$0 { reviewIdPendingHide = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("隐藏", role: .destructive) {
+                if let reviewId = reviewIdPendingHide {
+                    viewModel.hideReview(reviewId: reviewId)
+                }
+                reviewIdPendingHide = nil
+            }
+            Button("取消", role: .cancel) {
+                reviewIdPendingHide = nil
+            }
+        } message: {
+            Text("隐藏后这条评价不会再显示在本机。")
         }
         .alert("举报成功", isPresented: .init(
             get: { reportMessage != nil },
@@ -60,22 +81,26 @@ public struct CourseDetailView: View {
                     }
                 }
 
-                if detail.reviews.isEmpty {
+                let visibleReviews = viewModel.visibleReviews
+                if visibleReviews.isEmpty {
                     EmptyStateView(
                         icon: "text.bubble",
-                        message: "暂无评价"
+                        message: detail.reviews.isEmpty ? "暂无评价" : "已隐藏所有评价"
                     )
                     .padding()
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("评价 (\(detail.reviews.count))")
+                        Text("评价 (\(visibleReviews.count))")
                             .font(.headline)
                             .padding(.horizontal)
 
-                        ForEach(detail.reviews) { review in
+                        ForEach(visibleReviews) { review in
                             ReviewCard(
                                 review: review,
                                 onLike: { Task { await viewModel.toggleLike(for: review.id) } },
+                                onHide: {
+                                    reviewIdPendingHide = review.id
+                                },
                                 onReport: {
                                     selectedReviewId = review.id
                                     showReportSheet = true
@@ -240,6 +265,7 @@ public struct CourseDetailView: View {
 struct ReviewCard: View {
     let review: Review
     let onLike: () -> Void
+    let onHide: () -> Void
     let onReport: () -> Void
 
     var body: some View {
@@ -281,6 +307,17 @@ struct ReviewCard: View {
                 .buttonStyle(.plain)
 
                 Spacer()
+
+                Button(action: onHide) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "eye.slash")
+                            .font(.caption)
+                        Text("隐藏")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
 
                 Button(action: onReport) {
                     HStack(spacing: 4) {
@@ -326,6 +363,7 @@ struct ReviewCard: View {
             reviewerAvatar: nil
         ),
         onLike: {},
+        onHide: {},
         onReport: {}
     )
     .padding()
@@ -348,6 +386,7 @@ struct ReviewCard: View {
             reviewerAvatar: "https://i.pravatar.cc/80?u=li"
         ),
         onLike: {},
+        onHide: {},
         onReport: {}
     )
     .padding()

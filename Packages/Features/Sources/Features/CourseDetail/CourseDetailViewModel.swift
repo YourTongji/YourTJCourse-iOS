@@ -11,17 +11,30 @@ public final class CourseDetailViewModel {
     public private(set) var relatedCourses: RelatedCourses?
     public private(set) var isLoading = true
     public private(set) var error: String?
+    public private(set) var hiddenReviewIds: Set<Int>
 
     let courseId: Int
     private let courseRepo: CourseRepository
     private let reviewRepo: ReviewRepository
+    private let hiddenReviewStore: HiddenReviewStore
     private let config = APIConfig.default
     private let logger = AppLogger(category: "CourseDetail")
 
-    public init(courseId: Int, courseRepo: CourseRepository = .init(), reviewRepo: ReviewRepository = .init()) {
+    public init(
+        courseId: Int,
+        courseRepo: CourseRepository = .init(),
+        reviewRepo: ReviewRepository = .init(),
+        hiddenReviewStore: HiddenReviewStore = .init()
+    ) {
         self.courseId = courseId
         self.courseRepo = courseRepo
         self.reviewRepo = reviewRepo
+        self.hiddenReviewStore = hiddenReviewStore
+        self.hiddenReviewIds = hiddenReviewStore.load()
+    }
+
+    public var visibleReviews: [Review] {
+        courseDetail?.reviews.filter { !hiddenReviewIds.contains($0.id) } ?? []
     }
 
     public func load() async {
@@ -71,6 +84,11 @@ public final class CourseDetailViewModel {
         }
     }
 
+    public func hideReview(reviewId: Int) {
+        hiddenReviewIds.insert(reviewId)
+        hiddenReviewStore.save(hiddenReviewIds)
+    }
+
     private func updateReview(reviewId: Int, liked: Bool, likeCount: Int) {
         guard let detail = courseDetail,
               let review = detail.reviews.first(where: { $0.id == reviewId }) else {
@@ -80,5 +98,21 @@ public final class CourseDetailViewModel {
         courseDetail = detail.replacingReview(
             review.updatingLikeState(liked: liked, likeCount: likeCount)
         )
+    }
+}
+
+public struct HiddenReviewStore: Sendable {
+    private let key: String
+
+    public init(key: String = "com.yourtj.course.hiddenReviewIds") {
+        self.key = key
+    }
+
+    public func load() -> Set<Int> {
+        Set(UserDefaults.standard.array(forKey: key) as? [Int] ?? [])
+    }
+
+    public func save(_ reviewIds: Set<Int>) {
+        UserDefaults.standard.set(reviewIds.sorted(), forKey: key)
     }
 }
