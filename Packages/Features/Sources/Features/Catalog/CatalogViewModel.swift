@@ -20,6 +20,11 @@ public final class CatalogViewModel {
     }
     public var selectedDepartments: [String] = []
     public var onlyWithReviews = false
+    public var courseNameFilter = ""
+    public var courseCodeFilter = ""
+    public var teacherNameFilter = ""
+    public var campusFilter = ""
+    public var facultyFilter = ""
     public var departments: [String] = []
 
     private var currentPage = 1
@@ -59,6 +64,16 @@ public final class CatalogViewModel {
         await loadInitial()
     }
 
+    public func resetFilters() {
+        selectedDepartments = []
+        onlyWithReviews = false
+        courseNameFilter = ""
+        courseCodeFilter = ""
+        teacherNameFilter = ""
+        campusFilter = ""
+        facultyFilter = ""
+    }
+
     public func loadDepartments() async {
         guard departments.isEmpty else { return }
 
@@ -83,6 +98,11 @@ public final class CatalogViewModel {
                 query: searchText.isEmpty ? nil : searchText,
                 departments: selectedDepartments.isEmpty ? nil : selectedDepartments.joined(separator: ","),
                 onlyWithReviews: onlyWithReviews,
+                courseName: courseNameFilter.trimmed.nilIfEmpty,
+                courseCode: courseCodeFilter.trimmed.nilIfEmpty,
+                teacherName: teacherNameFilter.trimmed.nilIfEmpty,
+                campus: campusFilter.trimmed.nilIfEmpty,
+                faculty: facultyFilter.trimmed.nilIfEmpty,
                 page: page,
                 limit: 20,
                 includeTotal: page == 1
@@ -98,5 +118,15 @@ public final class CatalogViewModel {
             logger.error("Failed to load courses: \(error.localizedDescription)")
             self.error = error.localizedDescription
         }
+    }
+}
+
+private extension String {
+    var trimmed: String {
+        trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }
