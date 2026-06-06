@@ -65,7 +65,7 @@ public final class StartupViewModel {
             }
         } catch {
             logger.error("Startup verify failed: \(error.localizedDescription)")
-            phase = .failed("网络连接失败，请检查网络后重试")
+            phase = .failed(error.localizedDescription)
         }
     }
 
