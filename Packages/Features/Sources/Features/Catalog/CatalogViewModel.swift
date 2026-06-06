@@ -1,0 +1,91 @@
+import Foundation
+import Observation
+import DomainKit
+import DataKit
+import Platform
+
+@MainActor
+@Observable
+public final class CatalogViewModel {
+    public private(set) var courses: [Course] = []
+    public private(set) var isLoading = false
+    public private(set) var isLoadingMore = false
+    public private(set) var hasMore = true
+    public private(set) var totalCount: Int?
+    public private(set) var error: String?
+
+    // Search and filter state
+    public var searchText = "" {
+        didSet { searchTask?.cancel(); searchTask = Task { await searchDebounced() } }
+    }
+    public var selectedDepartments: [String] = []
+    public var onlyWithReviews = false
+    public var departments: [String] = []
+
+    private var currentPage = 1
+    private var searchTask: Task<Void, Never>?
+    private let repository: CourseRepository
+    private let logger = AppLogger(category: "Catalog")
+
+    private static let debounceInterval: Duration = .milliseconds(300)
+
+    public init(repository: CourseRepository = .init()) {
+        self.repository = repository
+    }
+
+    public func loadInitial() async {
+        isLoading = true
+        error = nil
+        currentPage = 1
+        courses = []
+        await fetchPage(page: 1)
+        isLoading = false
+    }
+
+    public func loadMore() async {
+        guard hasMore, !isLoadingMore else { return }
+        isLoadingMore = true
+        currentPage += 1
+        await fetchPage(page: currentPage, append: true)
+        isLoadingMore = false
+    }
+
+    public func refresh() async {
+        await loadInitial()
+    }
+
+    public func loadDepartments() async {
+        // Load departments list for filter picker
+        // For MVP, this is optional — the filter can accept free-text
+    }
+
+    // MARK: - Private
+
+    private func searchDebounced() async {
+        try? await Task.sleep(for: Self.debounceInterval)
+        guard !Task.isCancelled else { return }
+        await loadInitial()
+    }
+
+    private func fetchPage(page: Int, append: Bool = false) async {
+        do {
+            let response: PaginatedResponse<Course> = try await repository.getCourses(
+                query: searchText.isEmpty ? nil : searchText,
+                onlyWithReviews: onlyWithReviews,
+                page: page,
+                limit: 20,
+                includeTotal: page == 1
+            )
+            if append {
+                courses += response.data
+            } else {
+                courses = response.data
+            }
+            hasMore = response.hasMore
+            totalCount = response.total
+        } catch {
+            logger.error("Failed to load courses: \(error.localizedDescription)")
+            self.error = error.localizedDescription
+        }
+    }
+}

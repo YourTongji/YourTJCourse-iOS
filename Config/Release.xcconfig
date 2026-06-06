@@ -1,0 +1,5 @@
+// Release configuration
+API_BASE = https:/$()/jcourse.yourtj.de
+CREDIT_API_BASE = https:/$()/core.credit.yourtj.de
+
+// No BUNDLE_ID_SUFFIX for release — production bundle ID

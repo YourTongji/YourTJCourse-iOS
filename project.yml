@@ -1,0 +1,64 @@
+name: YourTJCourse
+options:
+  bundleIdPrefix: com.yourtj
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    TARGETED_DEVICE_FAMILY: "1"  # iPhone only for MVP
+
+configFiles:
+  Debug: Config/Debug.xcconfig
+  Release: Config/Release.xcconfig
+
+packages:
+  DomainKit:
+    path: Packages/DomainKit
+  DesignSystem:
+    path: Packages/DesignSystem
+  DataKit:
+    path: Packages/DataKit
+  Platform:
+    path: Packages/Platform
+  Features:
+    path: Packages/Features
+
+targets:
+  YourTJCourse:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    settings:
+      base:
+        INFOPLIST_FILE: App/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.yourtj.course$(BUNDLE_ID_SUFFIX)
+        PRODUCT_NAME: YourTJ Course
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        # Mark Info.plist keys from xcconfig
+        API_BASE: $(API_BASE)
+        CREDIT_API_BASE: $(CREDIT_API_BASE)
+    dependencies:
+      - package: DomainKit
+      - package: DesignSystem
+      - package: DataKit
+      - package: Platform
+      - package: Features
+    preBuildScripts:
+      - name: "SwiftLint"
+        script: |
+          if which swiftlint >/dev/null 2>&1; then
+            swiftlint
+          fi
+        basedOnDependencyAnalysis: false
+
+  # Tests will be added in a later phase

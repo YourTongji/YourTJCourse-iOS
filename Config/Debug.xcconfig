@@ -1,0 +1,7 @@
+// Debug configuration
+// ⚠️ xcconfig uses // for comments, URL double slashes must be escaped
+API_BASE = http:/$()/127.0.0.1:8787
+CREDIT_API_BASE = https:/$()/core.credit.yourtj.de
+
+// Allow HTTP for local development (only in Debug, do NOT include in Release)
+BUNDLE_ID_SUFFIX = .debug
