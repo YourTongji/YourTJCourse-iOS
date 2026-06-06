@@ -8,7 +8,7 @@ public struct CourseDetail: Codable, Sendable {
     public let reviewCount: Int
     public let teacherName: String
     public let department: String
-    public let credit: Int
+    public let credit: Double
     public let semesters: [String]
     public let reviews: [Review]
     public let description: String?
@@ -23,7 +23,7 @@ public struct CourseDetail: Codable, Sendable {
         reviewCount: Int,
         teacherName: String,
         department: String,
-        credit: Int,
+        credit: Double,
         semesters: [String],
         reviews: [Review],
         description: String? = nil,
@@ -74,6 +74,7 @@ public struct CourseDetail: Codable, Sendable {
         case code
         case name
         case rating
+        case reviewAverage = "review_avg"
         case reviewCount = "review_count"
         case teacherName = "teacher_name"
         case department
@@ -83,6 +84,42 @@ public struct CourseDetail: Codable, Sendable {
         case description
         case isLegacy = "is_legacy"
         case isIcu = "is_icu"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        code = try container.decode(String.self, forKey: .code)
+        name = try container.decode(String.self, forKey: .name)
+        rating = try container.decodeIfPresent(Double.self, forKey: .rating)
+            ?? container.decodeIfPresent(Double.self, forKey: .reviewAverage)
+            ?? 0
+        reviewCount = try container.decodeIfPresent(Int.self, forKey: .reviewCount) ?? 0
+        teacherName = try container.decodeIfPresent(String.self, forKey: .teacherName) ?? ""
+        department = try container.decodeIfPresent(String.self, forKey: .department) ?? ""
+        credit = try container.decodeIfPresent(Double.self, forKey: .credit) ?? 0
+        semesters = try container.decodeIfPresent([String].self, forKey: .semesters) ?? []
+        reviews = try container.decodeIfPresent([Review].self, forKey: .reviews) ?? []
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        isLegacy = try container.decodeBoolOrIntIfPresent(forKey: .isLegacy)
+        isIcu = try container.decodeBoolOrIntIfPresent(forKey: .isIcu)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(code, forKey: .code)
+        try container.encode(name, forKey: .name)
+        try container.encode(rating, forKey: .rating)
+        try container.encode(reviewCount, forKey: .reviewCount)
+        try container.encode(teacherName, forKey: .teacherName)
+        try container.encode(department, forKey: .department)
+        try container.encode(credit, forKey: .credit)
+        try container.encode(semesters, forKey: .semesters)
+        try container.encode(reviews, forKey: .reviews)
+        try container.encodeIfPresent(description, forKey: .description)
+        try container.encodeIfPresent(isLegacy, forKey: .isLegacy)
+        try container.encodeIfPresent(isIcu, forKey: .isIcu)
     }
 }
 

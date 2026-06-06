@@ -122,7 +122,7 @@ public struct CourseDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if detail.credit > 0 {
-                    Label("\(detail.credit) 学分", systemImage: "number")
+                    Label("\(formattedCredit(detail.credit)) 学分", systemImage: "number")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -146,7 +146,7 @@ public struct CourseDetailView: View {
                             department: course.department,
                             rating: course.rating,
                             reviewCount: course.reviewCount,
-                            credit: Double(course.credit),
+                            credit: course.credit,
                             semesterTags: course.semesters
                         )
                     }
@@ -169,7 +169,7 @@ public struct CourseDetailView: View {
                             department: course.department,
                             rating: course.rating,
                             reviewCount: course.reviewCount,
-                            credit: Double(course.credit),
+                            credit: course.credit,
                             semesterTags: course.semesters
                         )
                     }
@@ -225,6 +225,13 @@ public struct CourseDetailView: View {
         case .misinformation: return "不实信息"
         case .other: return "其他"
         }
+    }
+
+    private func formattedCredit(_ credit: Double) -> String {
+        if credit.rounded() == credit {
+            return String(Int(credit))
+        }
+        return String(format: "%g", credit)
     }
 }
 

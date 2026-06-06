@@ -63,7 +63,7 @@ public struct CatalogView: View {
                         department: course.department,
                         rating: course.rating,
                         reviewCount: course.reviewCount,
-                        credit: Double(course.credit),
+                        credit: course.credit,
                         semesterTags: course.semesters
                     )
                 }

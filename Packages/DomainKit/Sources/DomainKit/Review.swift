@@ -77,4 +77,34 @@ public struct Review: Codable, Identifiable, Hashable, Sendable {
         case reviewerName = "reviewer_name"
         case reviewerAvatar = "reviewer_avatar"
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        sqid = try container.decodeIfPresent(String.self, forKey: .sqid) ?? String(id)
+        courseId = try container.decode(Int.self, forKey: .courseId)
+        semester = try container.decodeIfPresent(String.self, forKey: .semester) ?? ""
+        rating = try container.decodeIfPresent(Int.self, forKey: .rating) ?? 0
+        comment = try container.decodeIfPresent(String.self, forKey: .comment) ?? ""
+        createdAt = try container.decodeStringOrNumberIfPresent(forKey: .createdAt) ?? ""
+        likeCount = try container.decodeIfPresent(Int.self, forKey: .likeCount) ?? 0
+        liked = try container.decodeIfPresent(Bool.self, forKey: .liked) ?? false
+        reviewerName = try container.decodeIfPresent(String.self, forKey: .reviewerName)
+        reviewerAvatar = try container.decodeIfPresent(String.self, forKey: .reviewerAvatar)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(sqid, forKey: .sqid)
+        try container.encode(courseId, forKey: .courseId)
+        try container.encode(semester, forKey: .semester)
+        try container.encode(rating, forKey: .rating)
+        try container.encode(comment, forKey: .comment)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(likeCount, forKey: .likeCount)
+        try container.encode(liked, forKey: .liked)
+        try container.encodeIfPresent(reviewerName, forKey: .reviewerName)
+        try container.encodeIfPresent(reviewerAvatar, forKey: .reviewerAvatar)
+    }
 }
