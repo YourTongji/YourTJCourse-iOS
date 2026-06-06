@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "DataKit",
-    platforms: [.iOS(.v18)],
+    platforms: [.iOS(.v18), .macOS(.v13)],
     products: [
         .library(name: "DataKit", targets: ["DataKit"])
     ],
@@ -14,6 +14,10 @@ let package = Package(
         .target(
             name: "DataKit",
             dependencies: ["DomainKit"]
+        ),
+        .testTarget(
+            name: "DataKitTests",
+            dependencies: ["DataKit"]
         )
     ]
 )
