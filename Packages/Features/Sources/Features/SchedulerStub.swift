@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import Observation
 import DomainKit
@@ -331,6 +332,7 @@ public final class SchedulerViewModel {
     private let schedulerRepo: SchedulerRepository
     private let logger = AppLogger(category: "Scheduler")
     private var detailsByCourseCode: [String: [SchedulerTeachingClass]] = [:]
+    private let selectedClassesStorageKey = "com.yourtj.course.scheduler.selectedClassesByCalendar"
 
     public init(schedulerRepo: SchedulerRepository = .init()) {
         self.schedulerRepo = schedulerRepo
@@ -351,6 +353,7 @@ public final class SchedulerViewModel {
             if selectedCalendarId == 0 {
                 selectedCalendarId = calendars.first?.calendarId ?? 0
             }
+            restoreSelectedClasses()
         } catch {
             logger.error("Failed to load scheduler calendars: \(error.localizedDescription)")
             self.error = error.localizedDescription
@@ -375,6 +378,7 @@ public final class SchedulerViewModel {
         searchResults = []
         expandedCourseCode = nil
         detailsByCourseCode = [:]
+        restoreSelectedClasses()
         guard selectedCalendarId != 0 else { return }
         await loadGrades()
     }
@@ -492,14 +496,17 @@ public final class SchedulerViewModel {
             return
         }
         selectedClasses.append(candidate)
+        persistSelectedClasses()
     }
 
     public func remove(_ item: SchedulerSelectedClass) {
         selectedClasses.removeAll { $0.id == item.id }
+        persistSelectedClasses()
     }
 
     public func clearSelectedClasses() {
         selectedClasses.removeAll()
+        persistSelectedClasses()
     }
 
     public func dismissError() {
@@ -568,6 +575,44 @@ public final class SchedulerViewModel {
         } catch {
             logger.error("Scheduler search failed: \(error.localizedDescription)")
             self.error = error.localizedDescription
+        }
+    }
+
+    private func restoreSelectedClasses() {
+        guard selectedCalendarId != 0 else {
+            selectedClasses = []
+            return
+        }
+        guard let data = UserDefaults.standard.data(forKey: selectedClassesStorageKey) else {
+            selectedClasses = []
+            return
+        }
+
+        do {
+            let stored = try JSONDecoder().decode([String: [SchedulerSelectedClass]].self, from: data)
+            selectedClasses = stored[String(selectedCalendarId)] ?? []
+        } catch {
+            selectedClasses = []
+            logger.error("Failed to restore scheduler selections: \(error.localizedDescription)")
+        }
+    }
+
+    private func persistSelectedClasses() {
+        guard selectedCalendarId != 0 else { return }
+
+        var stored: [String: [SchedulerSelectedClass]] = [:]
+        if let data = UserDefaults.standard.data(forKey: selectedClassesStorageKey),
+           let decoded = try? JSONDecoder().decode([String: [SchedulerSelectedClass]].self, from: data) {
+            stored = decoded
+        }
+
+        stored[String(selectedCalendarId)] = selectedClasses
+
+        do {
+            let data = try JSONEncoder().encode(stored)
+            UserDefaults.standard.set(data, forKey: selectedClassesStorageKey)
+        } catch {
+            logger.error("Failed to persist scheduler selections: \(error.localizedDescription)")
         }
     }
 }

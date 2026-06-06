@@ -70,7 +70,7 @@ public struct SchedulerSearchResponse: Decodable, Sendable {
     }
 }
 
-public struct SchedulerCourseSummary: Decodable, Identifiable, Hashable, Sendable {
+public struct SchedulerCourseSummary: Codable, Identifiable, Hashable, Sendable {
     public let courseCode: String
     public let courseName: String
     public let faculty: String
@@ -115,6 +115,17 @@ public struct SchedulerCourseSummary: Decodable, Identifiable, Hashable, Sendabl
         let campusValue = Self.decodeStringList(from: container, key: .campus)
         campus = campusValue.isEmpty ? Self.decodeStringList(from: container, key: .campusList) : campusValue
         credit = Self.decodeDouble(from: container, key: .credit)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(courseCode, forKey: .courseCode)
+        try container.encode(courseName, forKey: .courseName)
+        try container.encode(faculty, forKey: .faculty)
+        try container.encode(facultyI18n, forKey: .facultyI18n)
+        try container.encode(courseNature, forKey: .courseNature)
+        try container.encode(campus, forKey: .campus)
+        try container.encode(credit, forKey: .credit)
     }
 }
 
@@ -288,7 +299,7 @@ public struct SchedulerTeachingClass: Codable, Identifiable, Hashable, Sendable 
     }
 }
 
-public struct SchedulerSelectedClass: Identifiable, Hashable, Sendable {
+public struct SchedulerSelectedClass: Codable, Identifiable, Hashable, Sendable {
     public let course: SchedulerCourseSummary
     public let teachingClass: SchedulerTeachingClass
 
