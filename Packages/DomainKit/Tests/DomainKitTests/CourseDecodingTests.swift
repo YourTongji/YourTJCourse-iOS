@@ -70,7 +70,8 @@ import Testing
           "reviewer_name": "",
           "reviewer_avatar": "",
           "like_count": 0,
-          "liked": false
+          "liked": false,
+          "can_edit": true
         }
       ]
     }
@@ -83,6 +84,7 @@ import Testing
     #expect(detail.isLegacy == false)
     #expect(detail.isIcu == false)
     #expect(detail.reviews.first?.createdAt == "1772885683")
+    #expect(detail.reviews.first?.canEdit == true)
 }
 
 @Test func decodesProductionRelatedCoursesResponse() throws {

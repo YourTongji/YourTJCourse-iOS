@@ -62,11 +62,19 @@ public struct CourseRepository: Sendable {
     /// - Parameters:
     ///   - id: The course ID.
     ///   - clientId: Optional client ID for tracking like status.
+    ///   - walletUserHash: Optional wallet hash for marking reviews owned by this wallet.
     /// - Returns: A `CourseDetail` with reviews and metadata.
-    public func getCourseDetail(id: Int, clientId: String? = nil) async throws -> CourseDetail {
+    public func getCourseDetail(
+        id: Int,
+        clientId: String? = nil,
+        walletUserHash: String? = nil
+    ) async throws -> CourseDetail {
         var items: [URLQueryItem] = []
         if let cid = clientId, !cid.isEmpty {
             items.append(URLQueryItem(name: "clientId", value: cid))
+        }
+        if let walletUserHash, !walletUserHash.isEmpty {
+            items.append(URLQueryItem(name: "walletUserHash", value: walletUserHash))
         }
         return try await client.get("/api/course/\(id)", query: items)
     }

@@ -10,6 +10,7 @@ public struct Review: Codable, Identifiable, Hashable, Sendable {
     public let createdAt: String
     public let likeCount: Int
     public let liked: Bool
+    public let canEdit: Bool
     public let reviewerName: String?
     public let reviewerAvatar: String?
 
@@ -23,6 +24,7 @@ public struct Review: Codable, Identifiable, Hashable, Sendable {
         createdAt: String,
         likeCount: Int,
         liked: Bool,
+        canEdit: Bool = false,
         reviewerName: String? = nil,
         reviewerAvatar: String? = nil
     ) {
@@ -35,6 +37,7 @@ public struct Review: Codable, Identifiable, Hashable, Sendable {
         self.createdAt = createdAt
         self.likeCount = likeCount
         self.liked = liked
+        self.canEdit = canEdit
         self.reviewerName = reviewerName
         self.reviewerAvatar = reviewerAvatar
     }
@@ -50,6 +53,7 @@ public struct Review: Codable, Identifiable, Hashable, Sendable {
             createdAt: createdAt,
             likeCount: likeCount,
             liked: liked,
+            canEdit: canEdit,
             reviewerName: reviewerName,
             reviewerAvatar: reviewerAvatar
         )
@@ -74,6 +78,8 @@ public struct Review: Codable, Identifiable, Hashable, Sendable {
         case createdAt = "created_at"
         case likeCount = "like_count"
         case liked
+        case canEdit
+        case canEditSnake = "can_edit"
         case reviewerName = "reviewer_name"
         case reviewerAvatar = "reviewer_avatar"
     }
@@ -89,6 +95,9 @@ public struct Review: Codable, Identifiable, Hashable, Sendable {
         createdAt = try container.decodeStringOrNumberIfPresent(forKey: .createdAt) ?? ""
         likeCount = try container.decodeIfPresent(Int.self, forKey: .likeCount) ?? 0
         liked = try container.decodeIfPresent(Bool.self, forKey: .liked) ?? false
+        canEdit = try container.decodeBoolOrIntIfPresent(forKey: .canEdit)
+            ?? container.decodeBoolOrIntIfPresent(forKey: .canEditSnake)
+            ?? false
         reviewerName = try container.decodeIfPresent(String.self, forKey: .reviewerName)
         reviewerAvatar = try container.decodeIfPresent(String.self, forKey: .reviewerAvatar)
     }
@@ -104,6 +113,7 @@ public struct Review: Codable, Identifiable, Hashable, Sendable {
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(likeCount, forKey: .likeCount)
         try container.encode(liked, forKey: .liked)
+        try container.encode(canEdit, forKey: .canEditSnake)
         try container.encodeIfPresent(reviewerName, forKey: .reviewerName)
         try container.encodeIfPresent(reviewerAvatar, forKey: .reviewerAvatar)
     }

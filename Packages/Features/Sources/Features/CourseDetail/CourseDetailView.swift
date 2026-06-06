@@ -124,7 +124,7 @@ public struct CourseDetailView: View {
                         ForEach(visibleReviews) { review in
                             ReviewCard(
                                 review: review,
-                                canEdit: viewModel.canAttemptReviewEdits,
+                                canEdit: review.canEdit,
                                 onLike: { Task { await viewModel.toggleLike(for: review.id) } },
                                 onEdit: {
                                     reviewToEdit = review

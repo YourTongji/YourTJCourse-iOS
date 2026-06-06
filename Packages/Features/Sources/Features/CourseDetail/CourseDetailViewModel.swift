@@ -48,7 +48,12 @@ public final class CourseDetailViewModel {
         isLoading = true
         error = nil
         do {
-            async let detail = courseRepo.getCourseDetail(id: courseId, clientId: config.clientId)
+            let walletUserHash = walletRepo.loadWallet()?.userHash
+            async let detail = courseRepo.getCourseDetail(
+                id: courseId,
+                clientId: config.clientId,
+                walletUserHash: walletUserHash
+            )
             async let related = courseRepo.getRelatedCourses(id: courseId)
             let (d, r) = try await (detail, related)
             courseDetail = d
