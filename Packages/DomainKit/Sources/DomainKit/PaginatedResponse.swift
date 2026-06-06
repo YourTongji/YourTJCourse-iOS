@@ -37,15 +37,26 @@ public struct PaginatedResponse<T: Codable & Sendable>: Codable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        data = try container.decode([T].self, forKey: .data)
-        page = try container.decodeIfPresent(Int.self, forKey: .page) ?? 1
-        limit = try container.decodeIfPresent(Int.self, forKey: .limit) ?? data.count
-        hasMore = try container.decodeIfPresent(Bool.self, forKey: .hasMore)
+        let decodedData = try container.decode([T].self, forKey: .data)
+        let decodedPage = try container.decodeIfPresent(Int.self, forKey: .page) ?? 1
+        let decodedLimit = try container.decodeIfPresent(Int.self, forKey: .limit) ?? decodedData.count
+        let decodedTotal = try container.decodeIfPresent(Int.self, forKey: .total)
+        let decodedTotalPages = try container.decodeIfPresent(Int.self, forKey: .totalPages)
+            ?? container.decodeIfPresent(Int.self, forKey: .totalPagesSnake)
+        let decodedHasMore = try container.decodeIfPresent(Bool.self, forKey: .hasMore)
             ?? container.decodeIfPresent(Bool.self, forKey: .hasMoreSnake)
             ?? false
-        total = try container.decodeIfPresent(Int.self, forKey: .total)
-        totalPages = try container.decodeIfPresent(Int.self, forKey: .totalPages)
-            ?? container.decodeIfPresent(Int.self, forKey: .totalPagesSnake)
+
+        data = decodedData
+        page = decodedPage
+        limit = decodedLimit
+        total = decodedTotal
+        totalPages = decodedTotalPages
+        if let decodedTotalPages {
+            hasMore = decodedPage < decodedTotalPages
+        } else {
+            hasMore = decodedHasMore
+        }
     }
 
     public func encode(to encoder: Encoder) throws {

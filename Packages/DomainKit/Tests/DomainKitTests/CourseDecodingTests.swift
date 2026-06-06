@@ -32,7 +32,7 @@ import Testing
 
     #expect(response.data.first?.credit == 1.5)
     #expect(response.data.first?.rating == 5)
-    #expect(response.hasMore == false)
+    #expect(response.hasMore == true)
     #expect(response.total == 8918)
     #expect(response.totalPages == 446)
 }
