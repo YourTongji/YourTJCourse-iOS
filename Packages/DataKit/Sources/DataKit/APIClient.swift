@@ -193,7 +193,7 @@ public final class APIClient: Sendable {
 
         logger.debug("\(method) \(url.absoluteString) → \(httpResponse.statusCode) (\(data.count) bytes)")
 
-        try validate(statusCode: httpResponse.statusCode)
+        try validate(statusCode: httpResponse.statusCode, data: data)
         return data
     }
 
@@ -228,25 +228,49 @@ public final class APIClient: Sendable {
 
     // MARK: - Response Handling
 
-    private func validate(statusCode: Int) throws {
+    private func validate(statusCode: Int, data: Data) throws {
         switch statusCode {
         case 200...299:
             return
         case 400:
-            throw APIError.httpError(statusCode: statusCode, message: "请求参数错误")
+            throw APIError.httpError(statusCode: statusCode, message: decodeErrorMessage(from: data) ?? "请求参数错误")
         case 401:
+            if let message = decodeErrorMessage(from: data) {
+                throw APIError.httpError(statusCode: statusCode, message: message)
+            }
             throw APIError.unauthorized
         case 403:
+            if let message = decodeErrorMessage(from: data) {
+                throw APIError.httpError(statusCode: statusCode, message: message)
+            }
             throw APIError.captchaFailed
         case 404:
+            if let message = decodeErrorMessage(from: data) {
+                throw APIError.httpError(statusCode: statusCode, message: message)
+            }
             throw APIError.notFound
         case 409:
+            if let message = decodeErrorMessage(from: data) {
+                throw APIError.httpError(statusCode: statusCode, message: message)
+            }
             throw APIError.conflict
         case 429:
+            if let message = decodeErrorMessage(from: data) {
+                throw APIError.httpError(statusCode: statusCode, message: message)
+            }
             throw APIError.rateLimited
         default:
-            throw APIError.httpError(statusCode: statusCode, message: nil)
+            throw APIError.httpError(statusCode: statusCode, message: decodeErrorMessage(from: data))
         }
+    }
+
+    private func decodeErrorMessage(from data: Data) -> String? {
+        guard !data.isEmpty,
+              let payload = try? decoder.decode(APIErrorPayload.self, from: data)
+        else {
+            return nil
+        }
+        return payload.error?.nonEmptyTrimmed ?? payload.message?.nonEmptyTrimmed
     }
 
     private func decode<T: Decodable>(_ data: Data, for path: String) throws -> T {
@@ -263,6 +287,18 @@ public final class APIClient: Sendable {
 }
 
 // MARK: - Type Erasure Helper
+
+private struct APIErrorPayload: Decodable {
+    let error: String?
+    let message: String?
+}
+
+private extension String {
+    var nonEmptyTrimmed: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+}
 
 /// Erases the concrete Encodable type so we can pass heterogeneous bodies
 /// through the same internal method.
