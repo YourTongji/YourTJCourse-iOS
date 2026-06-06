@@ -56,30 +56,45 @@ public final class WalletViewModel {
         }
     }
 
-    public func createNewWallet() async {
+    public func loginOrRegisterWallet() async {
         guard !isProcessing else { return }
         isProcessing = true
+        defer { isProcessing = false }
+
         error = nil
 
         do {
             let repo = walletRepo
-            let studentId = studentId
+            let studentId = studentId.trimmingCharacters(in: .whitespacesAndNewlines)
             let pin = pin
             let wallet = try await Task.detached(priority: .userInitiated) {
                 try repo.generateWallet(studentId: studentId, pin: pin)
             }.value
-            pendingWallet = wallet
-            mnemonic = wallet.mnemonic.components(separatedBy: "-")
-            userHash = wallet.userHash
-            userSecret = wallet.userSecret
-            showMnemonic = false
-            phase = .newWallet
+
+            if try await walletExists(userHash: wallet.userHash) {
+                let remoteWallet = try await walletRepo.registerWallet(wallet)
+                try walletRepo.saveWallet(wallet)
+                userHash = wallet.userHash
+                userSecret = wallet.userSecret
+                mnemonic = []
+                pendingWallet = nil
+                showMnemonic = false
+                balance = remoteWallet.balance
+                phase = .ready
+                await refreshRemoteState(register: false)
+                logger.info("Wallet logged in from student ID and PIN")
+            } else {
+                pendingWallet = wallet
+                mnemonic = wallet.mnemonic.components(separatedBy: "-")
+                userHash = wallet.userHash
+                userSecret = wallet.userSecret
+                showMnemonic = false
+                phase = .newWallet
+            }
         } catch {
             logger.error("Failed to generate wallet: \(error.localizedDescription)")
             self.error = error.localizedDescription
         }
-
-        isProcessing = false
     }
 
     public func revealMnemonic() {
@@ -186,6 +201,19 @@ public final class WalletViewModel {
 
     public func dismissError() {
         error = nil
+    }
+
+    private func walletExists(userHash: String) async throws -> Bool {
+        do {
+            _ = try await walletRepo.fetchWallet(userHash: userHash)
+            return true
+        } catch APIError.notFound {
+            return false
+        } catch APIError.httpError(let statusCode, _) where statusCode == 404 {
+            return false
+        } catch {
+            throw error
+        }
     }
 
     private func refreshRemoteState(register: Bool) async {

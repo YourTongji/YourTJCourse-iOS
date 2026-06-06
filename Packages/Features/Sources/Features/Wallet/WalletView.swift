@@ -48,7 +48,7 @@ public struct WalletView: View {
             } message: {
                 Text(viewModel.error ?? "")
             }
-            .confirmationDialog("删除钱包？", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+            .alert("删除钱包？", isPresented: $showingDeleteConfirmation) {
                 Button("删除钱包", role: .destructive) {
                     viewModel.deleteWallet()
                 }
@@ -69,10 +69,10 @@ public struct WalletView: View {
                         .font(.system(size: 40))
                         .foregroundStyle(.cyan)
 
-                    Text("积分钱包")
+                    Text("登录 / 注册积分钱包")
                         .font(.title2.bold())
 
-                    Text("使用学号和自定义 PIN 在本机生成 credit 钱包。学号、PIN 和助记词不会上传；服务器只接收钱包 ID 与签名密钥，用于积分和评课编辑鉴权。")
+                    Text("使用学号和 PIN 登录或注册 credit 钱包。未注册的组合会创建新钱包；已注册的组合会恢复同一个钱包。学号、PIN 和助记词不会上传。")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -88,15 +88,15 @@ public struct WalletView: View {
                     .textContentType(.password)
 
                 Button {
-                    Task { await viewModel.createNewWallet() }
+                    Task { await viewModel.loginOrRegisterWallet() }
                 } label: {
-                    Label(viewModel.isProcessing ? "生成中..." : "生成新钱包", systemImage: "sparkles")
+                    Label(viewModel.isProcessing ? "处理中..." : "登录 / 注册钱包", systemImage: "sparkles")
                 }
                 .disabled(viewModel.isProcessing || viewModel.studentId.isEmpty || viewModel.pin.isEmpty)
             } header: {
-                Text("创建钱包")
+                Text("登录 / 注册")
             } footer: {
-                Text("同一个学号 + PIN 会生成同一个 3 词助记词，可与 credit.yourtj.de 钱包互通。")
+                Text("同一个学号 + PIN 会生成同一个 3 词助记词，可与 credit.yourtj.de 钱包互通。请妥善保管 PIN，遗失无法找回。")
             }
 
             Section {
@@ -123,7 +123,7 @@ public struct WalletView: View {
                         .font(.title2)
                         .bold()
 
-                    Text("请安全保存以下 3 个助记词，这是恢复钱包的唯一方式。\n不要截图、不要通过网络传输。")
+                    Text("Credit 尚未找到这个钱包。请先安全保存以下 3 个助记词，这是恢复新钱包的唯一方式。\n不要截图、不要通过网络传输。")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
