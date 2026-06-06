@@ -25,12 +25,17 @@ public final class CatalogViewModel {
     private var currentPage = 1
     private var searchTask: Task<Void, Never>?
     private let repository: CourseRepository
+    private let settingsRepository: SettingsRepository
     private let logger = AppLogger(category: "Catalog")
 
     private static let debounceInterval: Duration = .milliseconds(300)
 
-    public init(repository: CourseRepository = .init()) {
+    public init(
+        repository: CourseRepository = .init(),
+        settingsRepository: SettingsRepository = .init()
+    ) {
         self.repository = repository
+        self.settingsRepository = settingsRepository
     }
 
     public func loadInitial() async {
@@ -55,8 +60,13 @@ public final class CatalogViewModel {
     }
 
     public func loadDepartments() async {
-        // Load departments list for filter picker
-        // For MVP, this is optional — the filter can accept free-text
+        guard departments.isEmpty else { return }
+
+        do {
+            departments = try await settingsRepository.getDepartments()
+        } catch {
+            logger.error("Failed to load departments: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Private
@@ -71,6 +81,7 @@ public final class CatalogViewModel {
         do {
             let response: PaginatedResponse<Course> = try await repository.getCourses(
                 query: searchText.isEmpty ? nil : searchText,
+                departments: selectedDepartments.isEmpty ? nil : selectedDepartments.joined(separator: ","),
                 onlyWithReviews: onlyWithReviews,
                 page: page,
                 limit: 20,

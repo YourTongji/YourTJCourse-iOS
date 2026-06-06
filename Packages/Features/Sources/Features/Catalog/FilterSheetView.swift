@@ -15,6 +15,28 @@ struct FilterSheetView: View {
                     }
                 }
 
+                Section("开课院系") {
+                    if viewModel.departments.isEmpty {
+                        ProgressView("加载院系...")
+                    } else {
+                        ForEach(viewModel.departments, id: \.self) { department in
+                            Button {
+                                toggleDepartment(department)
+                            } label: {
+                                HStack {
+                                    Text(department)
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    if viewModel.selectedDepartments.contains(department) {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(.cyan)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Section {
                     Button("应用筛选") {
                         Task { await viewModel.loadInitial() }
@@ -37,6 +59,17 @@ struct FilterSheetView: View {
                     Button("完成") { dismiss() }
                 }
             }
+            .task {
+                await viewModel.loadDepartments()
+            }
+        }
+    }
+
+    private func toggleDepartment(_ department: String) {
+        if viewModel.selectedDepartments.contains(department) {
+            viewModel.selectedDepartments.removeAll { $0 == department }
+        } else {
+            viewModel.selectedDepartments.append(department)
         }
     }
 }
