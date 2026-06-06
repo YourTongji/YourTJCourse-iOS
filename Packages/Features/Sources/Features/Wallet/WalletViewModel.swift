@@ -13,20 +13,25 @@ public final class WalletViewModel {
     public private(set) var mnemonic: [String] = []
     public private(set) var showMnemonic = false
     public private(set) var error: String?
+    public private(set) var remoteError: String?
     public private(set) var isProcessing = false
+    public private(set) var isRefreshing = false
+    public private(set) var balance: Int?
+    public private(set) var summary: WalletSummary?
 
-    // Restore flow
+    public var studentId: String = ""
+    public var pin: String = ""
     public var restoreInput: String = ""
 
     private let walletRepo: WalletRepository
     private let logger = AppLogger(category: "Wallet")
+    private var pendingWallet: WalletCredentials?
 
     public enum WalletPhase: Equatable {
         case checking     // initial loading
         case exists       // wallet already created
         case create       // show create/restore options
         case newWallet    // show new mnemonic for backup
-        case confirmBackup // verify user backed up mnemonic
         case restore      // enter mnemonic to restore
         case ready        // wallet is ready
     }
@@ -40,27 +45,41 @@ public final class WalletViewModel {
         if let wallet = walletRepo.loadWallet() {
             userHash = wallet.userHash
             userSecret = wallet.userSecret
-            phase = .exists
+            phase = .ready
+            await refreshRemoteState(register: true)
         } else {
             userHash = ""
             userSecret = ""
+            balance = nil
+            summary = nil
             phase = .create
         }
     }
 
-    public func createNewWallet() {
+    public func createNewWallet() async {
+        guard !isProcessing else { return }
+        isProcessing = true
+        error = nil
+
         do {
-            let wallet = try walletRepo.generateWallet()
-            mnemonic = wallet.mnemonic
+            let repo = walletRepo
+            let studentId = studentId
+            let pin = pin
+            let wallet = try await Task.detached(priority: .userInitiated) {
+                try repo.generateWallet(studentId: studentId, pin: pin)
+            }.value
+            pendingWallet = wallet
+            mnemonic = wallet.mnemonic.components(separatedBy: "-")
             userHash = wallet.userHash
             userSecret = wallet.userSecret
             showMnemonic = false
-            error = nil
             phase = .newWallet
         } catch {
             logger.error("Failed to generate wallet: \(error.localizedDescription)")
-            self.error = "生成钱包失败，请稍后重试"
+            self.error = error.localizedDescription
         }
+
+        isProcessing = false
     }
 
     public func revealMnemonic() {
@@ -68,54 +87,77 @@ public final class WalletViewModel {
     }
 
     public func startRestore() {
+        restoreInput = ""
+        error = nil
         phase = .restore
     }
 
-    public func startBackupConfirmation() {
-        phase = .confirmBackup
+    public func cancelRestore() {
+        restoreInput = ""
+        error = nil
+        phase = .create
     }
 
-    public func confirmBackedUp() {
-        do {
-            try walletRepo.saveWallet(mnemonic: mnemonic, userHash: userHash, userSecret: userSecret)
-            mnemonic = []
-            showMnemonic = false
-            phase = .ready
-            logger.info("Wallet saved to Keychain")
-        } catch {
-            logger.error("Failed to save wallet: \(error.localizedDescription)")
-            self.error = "保存钱包失败"
-            phase = .newWallet
-            showMnemonic = true
-        }
-    }
-
-    public func restoreWallet() async {
-        let words = restoreInput
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-
-        guard let wallet = walletRepo.restoreWallet(from: words) else {
-            error = "助记词无效，请检查后重试"
+    public func confirmBackedUp() async {
+        guard !isProcessing else { return }
+        guard let wallet = pendingWallet else {
+            error = "钱包状态异常，请重新生成"
+            phase = .create
             return
         }
 
-        userHash = wallet.userHash
-        userSecret = wallet.userSecret
-        mnemonic = words
-        showMnemonic = false
+        isProcessing = true
+        error = nil
 
         do {
-            try walletRepo.saveWallet(mnemonic: words, userHash: userHash, userSecret: userSecret)
+            let remoteWallet = try await walletRepo.registerWallet(wallet)
+            try walletRepo.saveWallet(wallet)
             mnemonic = []
-            restoreInput = ""
+            pendingWallet = nil
+            showMnemonic = false
+            balance = remoteWallet.balance
             phase = .ready
+            await refreshRemoteState(register: false)
+            logger.info("Wallet saved to Keychain")
+        } catch {
+            logger.error("Failed to save wallet: \(error.localizedDescription)")
+            self.error = error.localizedDescription
+            phase = .newWallet
+            showMnemonic = true
+        }
+
+        isProcessing = false
+    }
+
+    public func restoreWallet() async {
+        guard !isProcessing else { return }
+        isProcessing = true
+        error = nil
+
+        do {
+            let repo = walletRepo
+            let input = restoreInput
+            let wallet = try await Task.detached(priority: .userInitiated) {
+                try repo.restoreWallet(from: repo.normalizeMnemonic(input))
+            }.value
+            let remoteWallet = try await walletRepo.registerWallet(wallet)
+            try walletRepo.saveWallet(wallet)
+            userHash = wallet.userHash
+            userSecret = wallet.userSecret
+            mnemonic = []
+            pendingWallet = nil
+            restoreInput = ""
+            showMnemonic = false
+            balance = remoteWallet.balance
+            phase = .ready
+            await refreshRemoteState(register: false)
             logger.info("Wallet restored from mnemonic")
         } catch {
             logger.error("Failed to save restored wallet: \(error.localizedDescription)")
-            self.error = "恢复钱包失败"
+            self.error = error.localizedDescription
         }
+
+        isProcessing = false
     }
 
     public func deleteWallet() {
@@ -125,13 +167,63 @@ public final class WalletViewModel {
             userHash = ""
             userSecret = ""
             mnemonic = []
+            pendingWallet = nil
             showMnemonic = false
+            balance = nil
+            summary = nil
+            remoteError = nil
+            studentId = ""
+            pin = ""
+            restoreInput = ""
         } catch {
             self.error = "删除钱包失败"
         }
     }
 
+    public func refresh() async {
+        await refreshRemoteState(register: false)
+    }
+
     public func dismissError() {
         error = nil
+    }
+
+    private func refreshRemoteState(register: Bool) async {
+        guard !userHash.isEmpty else { return }
+
+        isRefreshing = true
+        remoteError = nil
+        defer { isRefreshing = false }
+
+        if register, !userSecret.isEmpty {
+            do {
+                let credentials = WalletCredentials(mnemonic: "", userHash: userHash, userSecret: userSecret)
+                let remoteWallet = try await walletRepo.registerWallet(credentials)
+                balance = remoteWallet.balance
+            } catch {
+                remoteError = "钱包同步失败：\(error.localizedDescription)"
+                logger.error("Failed to register wallet with Credit service: \(error.localizedDescription)")
+            }
+        }
+
+        do {
+            let balanceResponse = try await walletRepo.fetchBalance(userHash: userHash)
+            balance = balanceResponse.balance
+        } catch {
+            remoteError = "余额刷新失败：\(error.localizedDescription)"
+            logger.error("Failed to fetch wallet balance: \(error.localizedDescription)")
+        }
+
+        do {
+            summary = try await walletRepo.fetchJCourseSummary(userHash: userHash)
+            if let summary {
+                balance = summary.balance
+            }
+        } catch {
+            if remoteError == nil {
+                remoteError = "今日积分刷新失败：\(error.localizedDescription)"
+            }
+            logger.error("Failed to fetch wallet summary: \(error.localizedDescription)")
+        }
     }
 }

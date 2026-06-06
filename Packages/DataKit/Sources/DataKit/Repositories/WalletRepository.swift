@@ -1,59 +1,53 @@
 import Foundation
 import DomainKit
 
-/// Manages wallet lifecycle — generation, keychain persistence, and restoration.
-///
-/// WalletRepository handles local wallet operations using `MnemonicHelper` for
-/// BIP39 mnemonic generation/derivation and `KeychainManager` for secure storage.
-/// Calls to the Credit service API (balance, summary, registration) are intentionally
-/// omitted from this layer and should be added via a dedicated `CreditClient` when
-/// the Credit service integration is built out.
+/// Manages the Credit wallet lifecycle: local derivation, Keychain persistence,
+/// and registration/summary calls to the Credit core service.
 public struct WalletRepository: Sendable {
-    private let client: APIClient
+    private let creditClient: CreditAPIClient
 
-    public init(client: APIClient = .shared) {
-        self.client = client
+    public init(creditClient: CreditAPIClient = .shared) {
+        self.creditClient = creditClient
     }
 
     // MARK: - Wallet Generation
 
-    /// Generates a new wallet with a random BIP39 mnemonic phrase.
-    /// - Returns: A tuple containing the mnemonic words, user hash, and user secret.
-    public func generateWallet() throws -> (mnemonic: [String], userHash: String, userSecret: String) {
-        let mnemonic = try MnemonicHelper.generate()
-        let (hash, secret) = MnemonicHelper.deriveWallet(from: mnemonic)
-        return (mnemonic, hash, secret)
+    /// Generates a deterministic Credit wallet from the same student ID + PIN
+    /// algorithm used by `YourTJ-Credit-Serverless/shared/utils/wallet.ts`.
+    public func generateWallet(studentId: String, pin: String) throws -> WalletCredentials {
+        let wallet = try MnemonicHelper.generate(studentId: studentId, pin: pin)
+        return WalletCredentials(
+            mnemonic: wallet.mnemonic,
+            userHash: wallet.userHash,
+            userSecret: wallet.userSecret
+        )
     }
 
-    /// Restores wallet credentials from an existing mnemonic phrase.
-    /// - Parameter mnemonic: The 12-word BIP39 mnemonic array.
-    /// - Returns: A tuple of `(userHash, userSecret)` if valid, or `nil` if the mnemonic
-    ///   fails validation.
-    public func restoreWallet(from mnemonic: [String]) -> (userHash: String, userSecret: String)? {
-        guard MnemonicHelper.validate(mnemonic.joined(separator: " ")) else { return nil }
-        return MnemonicHelper.deriveWallet(from: mnemonic)
+    /// Restores wallet credentials from a three-word Credit mnemonic.
+    public func restoreWallet(from mnemonic: String) throws -> WalletCredentials {
+        let wallet = try MnemonicHelper.restore(mnemonic: mnemonic)
+        return WalletCredentials(
+            mnemonic: wallet.mnemonic,
+            userHash: wallet.userHash,
+            userSecret: wallet.userSecret
+        )
+    }
+
+    public func normalizeMnemonic(_ phrase: String) -> String {
+        MnemonicHelper.normalize(phrase)
     }
 
     // MARK: - Keychain Persistence
 
     /// Persists wallet credentials to the secure Keychain.
-    ///
-    /// The mnemonic is stored with biometric protection; the hash and secret
-    /// are stored without biometrics for programmatic access.
-    /// - Parameters:
-    ///   - mnemonic: The BIP39 mnemonic words.
-    ///   - userHash: The wallet user hash.
-    ///   - userSecret: The wallet user secret.
-    public func saveWallet(mnemonic: [String], userHash: String, userSecret: String) throws {
-        try KeychainManager.save(key: "wallet_mnemonic", value: mnemonic.joined(separator: " "), useBiometrics: true)
-        try KeychainManager.save(key: "wallet_userHash", value: userHash)
-        try KeychainManager.save(key: "wallet_userSecret", value: userSecret)
+    public func saveWallet(_ wallet: WalletCredentials) throws {
+        try KeychainManager.save(key: "wallet_mnemonic", value: wallet.mnemonic, useBiometrics: true)
+        try KeychainManager.save(key: "wallet_userHash", value: wallet.userHash)
+        try KeychainManager.save(key: "wallet_userSecret", value: wallet.userSecret)
     }
 
     /// Loads wallet credentials from the Keychain.
-    /// - Returns: A tuple of `(userHash, userSecret)` if available, or `nil` if no
-    ///   wallet has been saved.
-    public func loadWallet() -> (userHash: String, userSecret: String)? {
+    public func loadWallet() -> WalletCredentials? {
         guard
             let userHash = try? KeychainManager.read(key: "wallet_userHash"),
             let userSecret = try? KeychainManager.read(key: "wallet_userSecret"),
@@ -62,12 +56,12 @@ public struct WalletRepository: Sendable {
         else {
             return nil
         }
-        return (userHash, userSecret)
+        return WalletCredentials(mnemonic: "", userHash: userHash, userSecret: userSecret)
     }
 
     /// Checks whether a wallet exists in the Keychain.
     public func hasWallet() -> Bool {
-        (try? KeychainManager.read(key: "wallet_userHash")) != nil
+        loadWallet() != nil
     }
 
     /// Deletes all wallet credentials from the Keychain.
@@ -75,5 +69,24 @@ public struct WalletRepository: Sendable {
         try KeychainManager.delete(key: "wallet_mnemonic")
         try KeychainManager.delete(key: "wallet_userHash")
         try KeychainManager.delete(key: "wallet_userSecret")
+    }
+
+    // MARK: - Credit Service
+
+    @discardableResult
+    public func registerWallet(_ wallet: WalletCredentials) async throws -> CreditWallet {
+        try await creditClient.registerWallet(userHash: wallet.userHash, userSecret: wallet.userSecret)
+    }
+
+    public func fetchWallet(userHash: String) async throws -> CreditWallet {
+        try await creditClient.fetchWallet(userHash: userHash)
+    }
+
+    public func fetchBalance(userHash: String) async throws -> WalletBalance {
+        try await creditClient.fetchBalance(userHash: userHash)
+    }
+
+    public func fetchJCourseSummary(userHash: String) async throws -> WalletSummary {
+        try await creditClient.fetchJCourseSummary(userHash: userHash)
     }
 }

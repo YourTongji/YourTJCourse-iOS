@@ -3,6 +3,7 @@ import DesignSystem
 
 public struct WalletView: View {
     @State private var viewModel = WalletViewModel()
+    @State private var showingDeleteConfirmation = false
 
     public init() {}
 
@@ -22,17 +23,22 @@ public struct WalletView: View {
                 case .exists, .ready:
                     walletReadyView
 
-                case .confirmBackup:
-                    Color.clear
-                        .task {
-                            viewModel.confirmBackedUp()
-                        }
-
                 case .restore:
                     restoreWalletView
                 }
             }
             .navigationTitle("我的")
+            .toolbar {
+                if viewModel.phase == .ready || viewModel.phase == .exists {
+                    Button {
+                        Task { await viewModel.refresh() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .disabled(viewModel.isRefreshing)
+                    .accessibilityLabel("刷新钱包")
+                }
+            }
             .task { await viewModel.checkWallet() }
             .alert("提示", isPresented: .init(
                 get: { viewModel.error != nil },
@@ -42,51 +48,64 @@ public struct WalletView: View {
             } message: {
                 Text(viewModel.error ?? "")
             }
+            .confirmationDialog("删除钱包？", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+                Button("删除钱包", role: .destructive) {
+                    viewModel.deleteWallet()
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("删除后将无法在本机继续编辑已用此钱包发表的评价。请确认已备份助记词。")
+            }
         }
     }
 
     // MARK: - Create Wallet
 
     private var createWalletView: some View {
-        VStack(spacing: 24) {
-            Spacer()
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    Image(systemName: "wallet.pass")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.cyan)
 
-            Image(systemName: "wallet.pass")
-                .font(.system(size: 64))
-                .foregroundStyle(.cyan)
+                    Text("积分钱包")
+                        .font(.title2.bold())
 
-            Text("积分钱包")
-                .font(.title2)
-                .bold()
-
-            Text("创建钱包后，发表评价可获得积分奖励")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-
-            Spacer()
-
-            VStack(spacing: 12) {
-                Button(action: { viewModel.createNewWallet() }) {
-                    Text("创建新钱包")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
+                    Text("使用学号和自定义 PIN 在本机生成 credit 钱包。学号、PIN 和助记词不会上传；服务器只接收钱包 ID 与签名密钥，用于积分和评课编辑鉴权。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.glassProminent)
-                .padding(.horizontal, 40)
-
-                Button(action: { viewModel.startRestore() }) {
-                    Text("恢复已有钱包")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                }
-                .buttonStyle(.glass)
-                .padding(.horizontal, 40)
+                .padding(.vertical, 6)
             }
 
-            Spacer()
-                .frame(height: 32)
+            Section {
+                TextField("学号", text: $viewModel.studentId)
+                    .textContentType(.username)
+                    .keyboardType(.numberPad)
+
+                SecureField("PIN 码（6-32 位）", text: $viewModel.pin)
+                    .textContentType(.password)
+
+                Button {
+                    Task { await viewModel.createNewWallet() }
+                } label: {
+                    Label(viewModel.isProcessing ? "生成中..." : "生成新钱包", systemImage: "sparkles")
+                }
+                .disabled(viewModel.isProcessing || viewModel.studentId.isEmpty || viewModel.pin.isEmpty)
+            } header: {
+                Text("创建钱包")
+            } footer: {
+                Text("同一个学号 + PIN 会生成同一个 3 词助记词，可与 credit.yourtj.de 钱包互通。")
+            }
+
+            Section {
+                Button {
+                    viewModel.startRestore()
+                } label: {
+                    Label("导入已有 3 词助记词", systemImage: "square.and.arrow.down")
+                }
+            }
         }
     }
 
@@ -104,7 +123,7 @@ public struct WalletView: View {
                         .font(.title2)
                         .bold()
 
-                    Text("请安全保存以下助记词，这是恢复钱包的唯一方式。\n不要截图、不要通过网络传输。")
+                    Text("请安全保存以下 3 个助记词，这是恢复钱包的唯一方式。\n不要截图、不要通过网络传输。")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -113,19 +132,20 @@ public struct WalletView: View {
                 .padding(.top, 20)
 
                 if viewModel.showMnemonic {
-                    // Grid of words
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], spacing: 8) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
                         ForEach(Array(viewModel.mnemonic.enumerated()), id: \.offset) { index, word in
-                            HStack(spacing: 4) {
+                            VStack(spacing: 6) {
                                 Text("\(index + 1).")
                                     .font(.caption2)
                                     .foregroundStyle(.tertiary)
                                 Text(word)
-                                    .font(.body.monospaced())
+                                    .font(.headline)
                                     .bold()
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
                             .background(.cyan.opacity(0.1))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
@@ -145,14 +165,22 @@ public struct WalletView: View {
                 }
 
                 if viewModel.showMnemonic {
-                    Button(action: { viewModel.startBackupConfirmation() }) {
-                        Text("我已安全备份")
+                    Button {
+                        Task { await viewModel.confirmBackedUp() }
+                    } label: {
+                        HStack {
+                            if viewModel.isProcessing {
+                                ProgressView()
+                            }
+                            Text(viewModel.isProcessing ? "正在启用..." : "我已安全备份并启用")
+                        }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
                     }
                     .buttonStyle(.glassProminent)
                     .padding(.horizontal, 40)
                     .padding(.top, 20)
+                    .disabled(viewModel.isProcessing)
                 }
             }
             .padding(.vertical)
@@ -179,20 +207,30 @@ public struct WalletView: View {
                 )
                 .padding(.horizontal)
 
-            Text("请输入 12 个单词，用空格分隔")
+            Text("请输入 3 个词，支持用 -、空格或换行分隔")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             Button(action: {
                 Task { await viewModel.restoreWallet() }
             }) {
-                Text("恢复钱包")
+                HStack {
+                    if viewModel.isProcessing {
+                        ProgressView()
+                    }
+                    Text(viewModel.isProcessing ? "恢复中..." : "恢复钱包")
+                }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
             }
             .buttonStyle(.glassProminent)
             .padding(.horizontal, 40)
-            .disabled(viewModel.restoreInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(viewModel.isProcessing || viewModel.restoreInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            Button("返回") {
+                viewModel.cancelRestore()
+            }
+            .disabled(viewModel.isProcessing)
 
             Spacer()
         }
@@ -203,6 +241,52 @@ public struct WalletView: View {
 
     private var walletReadyView: some View {
         List {
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("\(viewModel.balance ?? 0)")
+                            .font(.system(size: 44, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                        Text("小济元")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if viewModel.isRefreshing {
+                        Label("正在刷新积分数据", systemImage: "arrow.clockwise")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if let remoteError = viewModel.remoteError {
+                        Label(remoteError, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    } else {
+                        Label("已连接 YOURTJ Credit", systemImage: "checkmark.seal.fill")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+
+            Section("今日积分") {
+                metricRow(
+                    title: "预计合计",
+                    value: signed(todayEstimated),
+                    systemImage: "chart.line.uptrend.xyaxis"
+                )
+                metricRow(
+                    title: "评课激励",
+                    value: signed(viewModel.summary?.today.reviewReward ?? 0),
+                    systemImage: "text.bubble"
+                )
+                metricRow(
+                    title: "点赞待结算",
+                    value: signed(viewModel.summary?.today.likePendingPoints ?? 0),
+                    systemImage: "hand.thumbsup"
+                )
+            }
+
             Section("钱包") {
                 HStack {
                     Label("钱包状态", systemImage: "wallet.pass.fill")
@@ -224,7 +308,7 @@ public struct WalletView: View {
 
             Section("安全") {
                 Button(role: .destructive) {
-                    viewModel.deleteWallet()
+                    showingDeleteConfirmation = true
                 } label: {
                     Label("删除钱包", systemImage: "trash")
                         .foregroundStyle(.red)
@@ -232,7 +316,7 @@ public struct WalletView: View {
             }
 
             Section("提示") {
-                Text("钱包用于评价编辑鉴权和积分奖励。\n删除钱包后将无法编辑已发表的评价。")
+                Text("50 字以上点评可获得 +10 小济元；点赞激励按 credit 服务的 JCourse 结算规则展示。删除钱包后将无法编辑已发表的评价。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -240,6 +324,25 @@ public struct WalletView: View {
     }
 
     private var userHash: String { viewModel.userHash }
+
+    private var todayEstimated: Int {
+        let today = viewModel.summary?.today
+        return (today?.reviewReward ?? 0) + (today?.likePendingPoints ?? 0)
+    }
+
+    private func signed(_ value: Int) -> String {
+        value > 0 ? "+\(value)" : "\(value)"
+    }
+
+    private func metricRow(title: String, value: String, systemImage: String) -> some View {
+        HStack {
+            Label(title, systemImage: systemImage)
+            Spacer()
+            Text(value)
+                .font(.headline.monospacedDigit())
+                .foregroundStyle(value.hasPrefix("-") ? .red : .primary)
+        }
+    }
 }
 
 // MARK: - Previews

@@ -1,95 +1,137 @@
 import Foundation
 import CryptoKit
-import Security
 
 public enum MnemonicError: Error, Sendable, LocalizedError {
-    case entropyUnavailable(OSStatus)
+    case invalidStudentId
+    case invalidPin
+    case invalidMnemonic
+    case unknownMnemonicWord(String)
 
     public var errorDescription: String? {
         switch self {
-        case .entropyUnavailable(let status):
-            "安全随机数生成失败 (OSStatus: \(status))"
+        case .invalidStudentId:
+            "学号格式无效（应为 7-10 位数字）"
+        case .invalidPin:
+            "PIN 码长度必须在 6-32 位之间"
+        case .invalidMnemonic:
+            "助记词格式无效（应为 3 个词）"
+        case .unknownMnemonicWord(let word):
+            "词库中不存在词语：\(word)"
         }
     }
 }
 
 public enum MnemonicHelper: Sendable {
-    /// Generates a random 12-word BIP39 mnemonic phrase.
-    ///
-    /// Uses 128 bits of entropy (`SecRandomCopyBytes`).
-    /// This is a simplified implementation; for production use
-    /// a dedicated BIP39 library with proper checksum validation.
-    public static func generate() throws -> [String] {
-        var entropy = [UInt8](repeating: 0, count: 16) // 128 bits
-        let status = SecRandomCopyBytes(kSecRandomDefault, entropy.count, &entropy)
-        guard status == errSecSuccess else {
-            throw MnemonicError.entropyUnavailable(status)
-        }
+    private static let salt = "tongji-course-salt-2026"
+    private static let iterations = 100_000
+    private static let keyLength = 32
 
-        // Append checksum: first (entropyBits / 32) bits of SHA-256
-        let hash = Data(SHA256.hash(data: Data(entropy)))
-        let checksumBits = entropy.count * 8 / 32 // = 4 for 128-bit
+    public static func generate(studentId: String, pin: String) throws -> (mnemonic: String, userHash: String, userSecret: String) {
+        let normalizedStudentId = studentId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard validateStudentId(normalizedStudentId) else { throw MnemonicError.invalidStudentId }
+        guard validatePin(pin) else { throw MnemonicError.invalidPin }
 
-        // Combine entropy + checksum into a bit array
-        var bits: [Bool] = []
-        for byte in entropy {
-            for bit in 0..<8 {
-                bits.append((byte >> (7 - bit)) & 1 == 1)
-            }
-        }
-        for i in 0..<checksumBits {
-            bits.append((hash[i / 8] >> (7 - (i % 8))) & 1 == 1)
-        }
-
-        // Split into 11-bit indices and map to words
-        let words = BIP39Wordlist.english
-        var mnemonic: [String] = []
-        for i in stride(from: 0, to: bits.count, by: 11) {
-            var index = 0
-            for j in 0..<11 where i + j < bits.count {
-                if bits[i + j] {
-                    index |= 1 << (10 - j)
-                }
-            }
-            mnemonic.append(words[index])
-        }
-
-        return mnemonic
+        let initialKey = pbkdf2(input: "\(normalizedStudentId):\(pin)")
+        let mnemonic = mnemonic(from: initialKey, wordlist: CreditWordlist.words)
+        return try restore(mnemonic: mnemonic)
     }
 
-    /// Derives wallet identifiers from a mnemonic phrase.
-    ///
-    /// - `userHash`: Hex-encoded SHA-256 of the space-joined mnemonic.
-    /// - `userSecret`: First 64 hex characters of the SHA-512 digest.
-    public static func deriveWallet(from mnemonic: [String]) -> (userHash: String, userSecret: String) {
-        let phrase = mnemonic.joined(separator: " ")
-        let phraseData = Data(phrase.utf8)
+    public static func restore(mnemonic: String) throws -> (mnemonic: String, userHash: String, userSecret: String) {
+        let normalized = normalize(mnemonic)
+        guard validate(normalized) else { throw MnemonicError.invalidMnemonic }
 
-        let hash = SHA256.hash(data: phraseData)
-        let userHash = hash.map { String(format: "%02x", $0) }.joined()
+        let words = normalized.components(separatedBy: "-")
+        let wordlist = CreditWordlist.words
+        for word in words where !wordlist.contains(word) {
+            throw MnemonicError.unknownMnemonicWord(word)
+        }
 
-        let hash512 = SHA512.hash(data: phraseData)
-        let userSecret = hash512.map { String(format: "%02x", $0) }.joined().prefix(64).string
-
-        return (userHash, userSecret)
+        let derivedKey = pbkdf2(input: normalized)
+        let userHash = SHA256.hash(data: derivedKey).map { String(format: "%02x", $0) }.joined()
+        let userSecret = derivedKey.base64EncodedString()
+        return (normalized, userHash, userSecret)
     }
 
-    /// Validates that a phrase contains exactly 12 known BIP39 words.
+    public static func normalize(_ phrase: String) -> String {
+        phrase
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "，", with: "-")
+            .replacingOccurrences(of: ",", with: "-")
+            .components(separatedBy: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "-")))
+            .filter { !$0.isEmpty }
+            .joined(separator: "-")
+    }
+
     public static func validate(_ phrase: String) -> Bool {
         let words = phrase
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .components(separatedBy: .whitespacesAndNewlines)
+            .components(separatedBy: "-")
             .filter { !$0.isEmpty }
-
-        guard words.count == 12 else { return false }
-
-        let wordSet = Set(BIP39Wordlist.english)
-        return words.allSatisfy { wordSet.contains($0) }
+        return words.count == 3 && words.allSatisfy { !$0.isEmpty }
     }
-}
 
-// MARK: - Substring helper
+    public static func validateStudentId(_ studentId: String) -> Bool {
+        studentId.range(of: #"^\d{7,10}$"#, options: .regularExpression) != nil
+    }
 
-private extension String.SubSequence {
-    var string: String { String(self) }
+    public static func validatePin(_ pin: String) -> Bool {
+        (6...32).contains(pin.count)
+    }
+
+    private static func mnemonic(from key: Data, wordlist: [String]) -> String {
+        var words: [String] = []
+        for index in 0..<3 {
+            let offset = index * 2
+            let value = (Int(key[offset]) << 8) | Int(key[offset + 1])
+            words.append(wordlist[value % wordlist.count])
+        }
+        return words.joined(separator: "-")
+    }
+
+    private static func pbkdf2(input: String) -> Data {
+        pbkdf2SHA256(
+            password: Data(input.utf8),
+            salt: Data(salt.utf8),
+            iterations: iterations,
+            keyByteCount: keyLength
+        )
+    }
+
+    private static func pbkdf2SHA256(
+        password: Data,
+        salt: Data,
+        iterations: Int,
+        keyByteCount: Int
+    ) -> Data {
+        let key = SymmetricKey(data: password)
+        let hashByteCount = SHA256.byteCount
+        let blockCount = Int(ceil(Double(keyByteCount) / Double(hashByteCount)))
+        var derived = Data()
+
+        for blockIndex in 1...blockCount {
+            var blockSalt = salt
+            blockSalt.append(contentsOf: [
+                UInt8((blockIndex >> 24) & 0xff),
+                UInt8((blockIndex >> 16) & 0xff),
+                UInt8((blockIndex >> 8) & 0xff),
+                UInt8(blockIndex & 0xff),
+            ])
+
+            var u = Data(HMAC<SHA256>.authenticationCode(for: blockSalt, using: key))
+            var output = u
+
+            if iterations > 1 {
+                for _ in 1..<iterations {
+                    u = Data(HMAC<SHA256>.authenticationCode(for: u, using: key))
+                    for byteIndex in 0..<output.count {
+                        output[byteIndex] ^= u[byteIndex]
+                    }
+                }
+            }
+
+            derived.append(output)
+        }
+
+        return derived.prefix(keyByteCount)
+    }
 }
