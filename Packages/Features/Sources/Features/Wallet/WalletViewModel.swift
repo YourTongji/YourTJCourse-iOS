@@ -49,12 +49,18 @@ public final class WalletViewModel {
     }
 
     public func createNewWallet() {
-        let wallet = walletRepo.generateWallet()
-        mnemonic = wallet.mnemonic
-        userHash = wallet.userHash
-        userSecret = wallet.userSecret
-        showMnemonic = false
-        phase = .newWallet
+        do {
+            let wallet = try walletRepo.generateWallet()
+            mnemonic = wallet.mnemonic
+            userHash = wallet.userHash
+            userSecret = wallet.userSecret
+            showMnemonic = false
+            error = nil
+            phase = .newWallet
+        } catch {
+            logger.error("Failed to generate wallet: \(error.localizedDescription)")
+            self.error = "生成钱包失败，请稍后重试"
+        }
     }
 
     public func revealMnemonic() {

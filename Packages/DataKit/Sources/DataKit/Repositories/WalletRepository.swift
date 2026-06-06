@@ -19,8 +19,8 @@ public struct WalletRepository: Sendable {
 
     /// Generates a new wallet with a random BIP39 mnemonic phrase.
     /// - Returns: A tuple containing the mnemonic words, user hash, and user secret.
-    public func generateWallet() -> (mnemonic: [String], userHash: String, userSecret: String) {
-        let mnemonic = MnemonicHelper.generate()
+    public func generateWallet() throws -> (mnemonic: [String], userHash: String, userSecret: String) {
+        let mnemonic = try MnemonicHelper.generate()
         let (hash, secret) = MnemonicHelper.deriveWallet(from: mnemonic)
         return (mnemonic, hash, secret)
     }

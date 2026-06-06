@@ -48,7 +48,7 @@ public enum KeychainManager: Sendable {
     /// - Parameter key: The account key to look up.
     /// - Returns: The stored string, or `nil` if the item does not exist.
     public static func read(key: String) throws -> String? {
-        var query: [CFString: Any] = [
+        let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccount: key,

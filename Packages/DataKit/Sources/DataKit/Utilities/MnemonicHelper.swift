@@ -1,5 +1,17 @@
 import Foundation
 import CryptoKit
+import Security
+
+public enum MnemonicError: Error, Sendable, LocalizedError {
+    case entropyUnavailable(OSStatus)
+
+    public var errorDescription: String? {
+        switch self {
+        case .entropyUnavailable(let status):
+            "安全随机数生成失败 (OSStatus: \(status))"
+        }
+    }
+}
 
 public enum MnemonicHelper: Sendable {
     /// Generates a random 12-word BIP39 mnemonic phrase.
@@ -7,9 +19,12 @@ public enum MnemonicHelper: Sendable {
     /// Uses 128 bits of entropy (`SecRandomCopyBytes`).
     /// This is a simplified implementation; for production use
     /// a dedicated BIP39 library with proper checksum validation.
-    public static func generate() -> [String] {
+    public static func generate() throws -> [String] {
         var entropy = [UInt8](repeating: 0, count: 16) // 128 bits
-        SecRandomCopyBytes(kSecRandomDefault, entropy.count, &entropy)
+        let status = SecRandomCopyBytes(kSecRandomDefault, entropy.count, &entropy)
+        guard status == errSecSuccess else {
+            throw MnemonicError.entropyUnavailable(status)
+        }
 
         // Append checksum: first (entropyBits / 32) bits of SHA-256
         let hash = Data(SHA256.hash(data: Data(entropy)))
