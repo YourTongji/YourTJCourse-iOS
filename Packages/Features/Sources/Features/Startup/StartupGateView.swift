@@ -190,6 +190,7 @@ private struct MaintenanceContentView: View {
 
 // MARK: - Preview Helper
 
+@MainActor
 private func startupGateWithViewModel(_ vm: StartupViewModel) -> some View {
     StartupGateView(viewModel: vm, onComplete: {})
 }
