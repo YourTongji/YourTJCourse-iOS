@@ -21,18 +21,30 @@ public struct TongjiCaptchaView: View {
 
     public var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
+            Group {
                 if isLoading {
-                    Spacer()
-                    ProgressView("正在加载验证码...")
-                    Spacer()
-                } else if let challenge {
-                    challengeBody(challenge)
-                } else if let error {
-                    errorBody(error)
+                    VStack {
+                        Spacer()
+                        ProgressView("正在加载验证码...")
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            if let challenge {
+                                challengeBody(challenge)
+                            } else if let error {
+                                errorBody(error)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .top)
+                        .padding(.horizontal)
+                        .padding(.top, 16)
+                        .padding(.bottom, 24)
+                    }
                 }
             }
-            .padding()
             .navigationTitle("人机验证")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -51,13 +63,13 @@ public struct TongjiCaptchaView: View {
     }
 
     private func challengeBody(_ challenge: TongjiCaptchaChallenge) -> some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 14) {
             Text(challenge.prompt)
                 .font(.headline)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
 
-            LazyVGrid(columns: gridColumns, spacing: 10) {
+            LazyVGrid(columns: gridColumns, spacing: 8) {
                 ForEach(challenge.images.indices, id: \.self) { index in
                     captchaImageButton(challenge: challenge, index: index)
                 }
@@ -69,8 +81,6 @@ public struct TongjiCaptchaView: View {
                     .foregroundStyle(.red)
                     .multilineTextAlignment(.center)
             }
-
-            Spacer(minLength: 0)
 
             Button {
                 Task { await verify(challenge) }
@@ -89,6 +99,7 @@ public struct TongjiCaptchaView: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(selectedIndices.isEmpty || isVerifying)
+            .padding(.top, 2)
         }
     }
 
@@ -142,7 +153,6 @@ public struct TongjiCaptchaView: View {
 
     private func errorBody(_ error: CaptchaError) -> some View {
         VStack(spacing: 16) {
-            Spacer()
             Image(systemName: "exclamationmark.shield.fill")
                 .font(.largeTitle)
                 .foregroundStyle(.secondary)
@@ -154,12 +164,12 @@ public struct TongjiCaptchaView: View {
                 Task { await loadChallenge() }
             }
             .buttonStyle(.borderedProminent)
-            Spacer()
         }
+        .frame(maxWidth: .infinity, minHeight: 260)
     }
 
     private var gridColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
+        Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
     }
 
     private func toggle(_ index: Int) {

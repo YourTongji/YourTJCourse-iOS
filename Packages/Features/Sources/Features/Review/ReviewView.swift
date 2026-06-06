@@ -128,7 +128,8 @@ public struct ReviewView: View {
                     showCaptcha = false
                     Task { await viewModel.submit(captchaToken: token) }
                 })
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
             }
             .interactiveDismissDisabled(viewModel.isSubmitting)
             .alert("完成", isPresented: .init(
