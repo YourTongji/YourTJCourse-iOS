@@ -5,5 +5,8 @@ let package = Package(
     name: "DomainKit",
     platforms: [.iOS(.v18)],
     products: [.library(name: "DomainKit", targets: ["DomainKit"])],
-    targets: [.target(name: "DomainKit")]
+    targets: [
+        .target(name: "DomainKit"),
+        .testTarget(name: "DomainKitTests", dependencies: ["DomainKit"])
+    ]
 )
