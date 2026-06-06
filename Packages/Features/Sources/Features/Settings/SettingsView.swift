@@ -7,6 +7,8 @@ import Platform
 
 public struct SettingsView: View {
     @State private var viewModel = SettingsViewModel()
+    @AppStorage(AppAppearancePreference.storageKey) private var appearancePreferenceRawValue =
+        AppAppearancePreference.system.rawValue
 
     public init() {}
 
@@ -33,6 +35,16 @@ public struct SettingsView: View {
                                 .foregroundStyle(.tertiary)
                         }
                     }
+                }
+
+                Section("外观") {
+                    Picker("显示模式", selection: $appearancePreferenceRawValue) {
+                        ForEach(AppAppearancePreference.allCases) { preference in
+                            Text(preference.title)
+                                .tag(preference.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                 }
 
                 // Support Section

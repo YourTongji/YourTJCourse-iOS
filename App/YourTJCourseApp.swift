@@ -38,6 +38,8 @@ struct YourTJCourseApp: App {
 
 struct RootView: View {
     @State private var startupFinished = false
+    @AppStorage(AppAppearancePreference.storageKey) private var appearancePreferenceRawValue =
+        AppAppearancePreference.system.rawValue
 
     var body: some View {
         Group {
@@ -53,6 +55,7 @@ struct RootView: View {
                 .transition(.opacity)
             }
         }
+        .preferredColorScheme(AppAppearancePreference.resolve(appearancePreferenceRawValue).colorScheme)
         .animation(.default, value: startupFinished)
     }
 }
