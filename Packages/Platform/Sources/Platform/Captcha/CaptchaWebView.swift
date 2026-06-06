@@ -7,13 +7,13 @@ import WebKit
 /// the token back via `WKScriptMessageHandler`.
 public struct CaptchaWebView: UIViewRepresentable {
     let config: CaptchaConfig
-    let onToken: @Sendable (String) -> Void
-    let onError: @Sendable (CaptchaError) -> Void
+    let onToken: @MainActor (String) -> Void
+    let onError: @MainActor (CaptchaError) -> Void
 
     public init(
         config: CaptchaConfig,
-        onToken: @escaping @Sendable (String) -> Void,
-        onError: @escaping @Sendable (CaptchaError) -> Void
+        onToken: @escaping @MainActor (String) -> Void,
+        onError: @escaping @MainActor (CaptchaError) -> Void
     ) {
         self.config = config
         self.onToken = onToken
@@ -57,7 +57,7 @@ public struct CaptchaWebView: UIViewRepresentable {
 
     private func loadCaptcha(in webView: WKWebView) {
         let html = CaptchaHTMLBuilder.build(for: config)
-        webView.loadHTMLString(html, baseURL: nil)
+        webView.loadHTMLString(html, baseURL: config.htmlBaseURL)
     }
 }
 
@@ -65,12 +65,12 @@ public struct CaptchaWebView: UIViewRepresentable {
 
 extension CaptchaWebView {
     public final class Coordinator: NSObject, WKScriptMessageHandler {
-        private let onToken: @Sendable (String) -> Void
-        private let onError: @Sendable (CaptchaError) -> Void
+        private let onToken: @MainActor (String) -> Void
+        private let onError: @MainActor (CaptchaError) -> Void
 
         init(
-            onToken: @escaping @Sendable (String) -> Void,
-            onError: @escaping @Sendable (CaptchaError) -> Void
+            onToken: @escaping @MainActor (String) -> Void,
+            onError: @escaping @MainActor (CaptchaError) -> Void
         ) {
             self.onToken = onToken
             self.onError = onError
@@ -209,11 +209,11 @@ extension CaptchaError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case let .providerError(message):
-            "Captcha error: \(message)"
+            "验证码错误：\(message)"
         case .invalidToken:
-            "Invalid captcha token received."
+            "收到的验证码无效。"
         case let .loadFailed(description):
-            "Failed to load captcha: \(description)"
+            "验证码加载失败：\(description)"
         }
     }
 }

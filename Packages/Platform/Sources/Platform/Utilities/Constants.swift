@@ -40,7 +40,20 @@ public enum AppConstants {
     // MARK: - Captcha
 
     /// Cloudflare Turnstile site key for the production environment.
-    public static let turnstileSiteKey = "0x4AAAAAAAXXX"
+    public static let turnstileSiteKey: String = {
+        let production = "0x4AAAAAACLdrWZ26NAi5n6O"
+        guard let configValue = Bundle.main.object(
+            forInfoDictionaryKey: "TURNSTILE_SITE_KEY"
+        ) as? String else {
+            return production
+        }
+
+        let trimmed = configValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? production : trimmed
+    }()
+
+    /// Web origin used to load Turnstile HTML so server-side hostname checks match production.
+    public static let turnstileBaseURL = URL(string: "https://xk.yourtj.de")
 
     // MARK: - App Group
 

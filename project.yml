@@ -47,6 +47,7 @@ targets:
         # Mark Info.plist keys from xcconfig
         API_BASE: $(API_BASE)
         CREDIT_API_BASE: $(CREDIT_API_BASE)
+        TURNSTILE_SITE_KEY: $(TURNSTILE_SITE_KEY)
     dependencies:
       - package: DomainKit
       - package: DesignSystem

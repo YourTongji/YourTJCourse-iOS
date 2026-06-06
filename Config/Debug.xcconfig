@@ -2,6 +2,7 @@
 // ⚠️ xcconfig uses // for comments, URL double slashes must be escaped
 API_BASE = https:/$()/jcourse.yourtj.de
 CREDIT_API_BASE = https:/$()/core.credit.yourtj.de
+TURNSTILE_SITE_KEY = 0x4AAAAAACLdrWZ26NAi5n6O
 
 // Keep the Debug bundle ID separate from Release.
 BUNDLE_ID_SUFFIX = .debug

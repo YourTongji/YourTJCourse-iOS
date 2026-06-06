@@ -73,10 +73,7 @@ public struct StartupGateView: View {
 
 // MARK: - Captcha Content
 
-/// The branded landing screen displaying the app icon and captcha verification.
-///
-/// In MVP mode, a simple "进入应用" button simulates captcha completion.
-/// Replace the button body with `CaptchaView` from Platform for production.
+/// The branded landing screen displaying the app icon and Turnstile verification.
 private struct CaptchaContent: View {
     let onVerify: (String) -> Void
 
@@ -99,16 +96,11 @@ private struct CaptchaContent: View {
 
             Spacer()
 
-            // MVP: simulated captcha — replace with CaptchaView from Platform
-            // e.g. CaptchaView(config: .turnstile(siteKey: "...", action: "startup"), onToken: onVerify)
-            Button(action: {
-                onVerify("simulated_token_mvp")
-            }) {
-                Text("进入应用")
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-            }
-            .buttonStyle(.glassProminent)
+            CaptchaView(
+                config: .turnstile(siteKey: AppConstants.turnstileSiteKey, action: "startup_gate"),
+                onToken: onVerify
+            )
+            .frame(maxWidth: 340)
             .padding(.horizontal, 40)
 
             Text("点击即表示同意用户协议和隐私政策")

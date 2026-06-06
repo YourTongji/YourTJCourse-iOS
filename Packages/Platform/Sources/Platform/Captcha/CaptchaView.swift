@@ -40,7 +40,6 @@ public struct CaptchaView: View {
             )
             .id(viewID)
             .frame(height: 80)
-            .opacity(isLoading ? 0 : 1)
         }
         .frame(maxWidth: .infinity)
     }
@@ -48,7 +47,7 @@ public struct CaptchaView: View {
     // MARK: - Loading View
 
     private var loadingView: some View {
-        ProgressView("Loading captcha…")
+        ProgressView("正在加载验证码...")
             .progressViewStyle(.circular)
     }
 
@@ -65,7 +64,7 @@ public struct CaptchaView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
-            Button("Retry") {
+            Button("重试") {
                 retry()
             }
             .buttonStyle(.bordered)

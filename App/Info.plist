@@ -41,6 +41,8 @@
 	<string>$(API_BASE)</string>
 	<key>CREDIT_API_BASE</key>
 	<string>$(CREDIT_API_BASE)</string>
+	<key>TURNSTILE_SITE_KEY</key>
+	<string>$(TURNSTILE_SITE_KEY)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

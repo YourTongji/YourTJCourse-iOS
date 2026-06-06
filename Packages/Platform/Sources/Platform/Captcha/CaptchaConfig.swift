@@ -46,4 +46,14 @@ public enum CaptchaConfig: Sendable {
             #"data-action="\#(action)""#
         }
     }
+
+    /// Base URL used for the generated HTML page.
+    var htmlBaseURL: URL? {
+        switch self {
+        case .turnstile:
+            AppConstants.turnstileBaseURL
+        case .tongjiCaptcha:
+            nil
+        }
+    }
 }
