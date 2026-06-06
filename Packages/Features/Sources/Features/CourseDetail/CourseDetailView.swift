@@ -88,6 +88,9 @@ public struct CourseDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 courseHeader(detail)
 
+                // AI Summary Card
+                aiSummaryCard
+
                 if !detail.semesters.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
@@ -146,6 +149,101 @@ public struct CourseDetailView: View {
                 }
             }
             .padding(.vertical)
+        }
+    }
+
+    @ViewBuilder
+    private var aiSummaryCard: some View {
+        if let summary = viewModel.aiSummary, summary.hasContent {
+            VStack(alignment: .leading, spacing: 12) {
+                // Header with dismiss
+                HStack {
+                    Image(systemName: "sparkle.magnifyingglass")
+                        .foregroundStyle(.cyan)
+                    Text("AI 课程总结")
+                        .font(.subheadline.bold())
+                    Spacer()
+                    Button {
+                        viewModel.dismissSummary()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // Rating consensus
+                HStack(spacing: 4) {
+                    Text("综合评价")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(summary.ratingConsensus)
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.cyan)
+                }
+
+                // Keywords
+                if !summary.keywords.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(summary.keywords, id: \.self) { keyword in
+                                Text(keyword)
+                                    .font(.caption2)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(.cyan.opacity(0.12))
+                                    .clipShape(Capsule())
+                            }
+                        }
+                    }
+                }
+
+                // Pros
+                if !summary.pros.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("优点").font(.caption).bold().foregroundStyle(.green)
+                        ForEach(summary.pros, id: \.self) { pro in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "plus.circle.fill").font(.caption2).foregroundStyle(.green)
+                                Text(pro).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                // Cons
+                if !summary.cons.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("缺点").font(.caption).bold().foregroundStyle(.orange)
+                        ForEach(summary.cons, id: \.self) { con in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "minus.circle.fill").font(.caption2).foregroundStyle(.orange)
+                                Text(con).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding()
+            .background(.cyan.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(.cyan.opacity(0.2), lineWidth: 1)
+            )
+            .padding(.horizontal)
+        } else if viewModel.isSummaryLoading {
+            HStack {
+                Spacer()
+                ProgressView()
+                    .controlSize(.small)
+                Text("正在生成 AI 总结...")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                Spacer()
+            }
+            .padding(.horizontal)
         }
     }
 

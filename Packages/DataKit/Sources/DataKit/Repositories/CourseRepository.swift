@@ -89,6 +89,18 @@ public struct CourseRepository: Sendable {
         try await client.get("/api/course/\(id)/related")
     }
 
+    // MARK: - AI Summary
+
+    /// Fetches AI-generated course summary from reviews.
+    /// - Parameter courseId: The course ID.
+    /// - Parameter refresh: If true, forces re-generation.
+    /// - Returns: An `AiSummaryResponse` with summary data.
+    public func getAiSummary(courseId: Int, refresh: Bool = false) async throws -> AiSummaryResponse {
+        var items: [URLQueryItem] = []
+        if refresh { items.append(URLQueryItem(name: "refresh", value: "true")) }
+        return try await client.get("/api/course/\(courseId)/summary", query: items)
+    }
+
     // MARK: - Lookup by Course Code
 
     /// Looks up a course by its code, optionally filtering by teacher.

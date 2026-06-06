@@ -47,10 +47,22 @@ public struct SettingsView: View {
                         }
                     }
 
-                    if let repoURL = URL(string: "https://github.com/yzxoi/YourTJCourse-Serverless") {
-                        Link(destination: repoURL) {
+                    if let serverlessURL = URL(string: "https://github.com/YourTongji/YourTJCourse-Serverless") {
+                        Link(destination: serverlessURL) {
                             HStack {
-                                Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
+                                Label("后端仓库", systemImage: "server.rack")
+                                Spacer()
+                                Image(systemName: "arrow.up.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+
+                    if let iosURL = URL(string: "https://github.com/YourTongji/YourTJCourse-iOS") {
+                        Link(destination: iosURL) {
+                            HStack {
+                                Label("客户端仓库", systemImage: "iphone")
                                 Spacer()
                                 Image(systemName: "arrow.up.right")
                                     .font(.caption)
@@ -379,6 +391,19 @@ struct AboutView: View {
                 Text("同济大学选课社区 iOS 客户端")
                     .font(.body)
                     .foregroundStyle(.secondary)
+
+                VStack(spacing: 12) {
+                    if let serverlessURL = URL(string: "https://github.com/YourTongji/YourTJCourse-Serverless") {
+                        Link("后端: YourTJCourse-Serverless", destination: serverlessURL)
+                            .font(.caption)
+                            .foregroundStyle(.cyan)
+                    }
+                    if let iosURL = URL(string: "https://github.com/YourTongji/YourTJCourse-iOS") {
+                        Link("客户端: YourTJCourse-iOS", destination: iosURL)
+                            .font(.caption)
+                            .foregroundStyle(.cyan)
+                    }
+                }
 
                 Spacer()
 

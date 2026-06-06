@@ -9,6 +9,8 @@ import Platform
 public final class CourseDetailViewModel {
     public private(set) var courseDetail: CourseDetail?
     public private(set) var relatedCourses: RelatedCourses?
+    public private(set) var aiSummary: AiSummaryData?
+    public private(set) var isSummaryLoading = false
     public private(set) var isLoading = true
     public private(set) var error: String?
     public private(set) var hiddenReviewIds: Set<Int>
@@ -49,20 +51,40 @@ public final class CourseDetailViewModel {
         error = nil
         do {
             let walletUserHash = walletRepo.loadWallet()?.userHash
-            async let detail = courseRepo.getCourseDetail(
+            courseDetail = try await courseRepo.getCourseDetail(
                 id: courseId,
                 clientId: config.clientId,
                 walletUserHash: walletUserHash
             )
-            async let related = courseRepo.getRelatedCourses(id: courseId)
-            let (d, r) = try await (detail, related)
-            courseDetail = d
-            relatedCourses = r
+            do {
+                relatedCourses = try await courseRepo.getRelatedCourses(id: courseId)
+            } catch {
+                relatedCourses = nil
+                logger.error("Failed to load related courses: \(error.localizedDescription)")
+            }
         } catch {
             logger.error("Failed to load course detail: \(error.localizedDescription)")
             self.error = error.localizedDescription
         }
         isLoading = false
+
+        // Fetch AI summary — optional content, silence errors
+        await loadAiSummary()
+    }
+
+    private func loadAiSummary() async {
+        isSummaryLoading = true
+        do {
+            let response = try await courseRepo.getAiSummary(courseId: courseId)
+            aiSummary = response.data
+        } catch {
+            logger.error("Failed to load AI summary: \(error.localizedDescription)")
+        }
+        isSummaryLoading = false
+    }
+
+    public func dismissSummary() {
+        aiSummary = nil
     }
 
     public func refresh() async {
