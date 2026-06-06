@@ -2,5 +2,6 @@
 API_BASE = https:/$()/jcourse.yourtj.de
 CREDIT_API_BASE = https:/$()/core.credit.yourtj.de
 TURNSTILE_SITE_KEY = 0x4AAAAAACLdrWZ26NAi5n6O
+TONGJI_CAPTCHA_BASE = https:/$()/captcha.07211024.xyz
 
 // No BUNDLE_ID_SUFFIX for release — production bundle ID

@@ -13,7 +13,9 @@ public enum CaptchaConfig: Sendable {
         case .turnstile:
             "https://challenges.cloudflare.com/turnstile/v0/siteverify"
         case .tongjiCaptcha:
-            "https://captcha.tongji.edu.cn/api/verify"
+            AppConstants.tongjiCaptchaBaseURL
+                .appendingPathComponent("api/verify")
+                .absoluteString
         }
     }
 

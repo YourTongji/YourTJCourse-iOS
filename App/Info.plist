@@ -43,6 +43,8 @@
 	<string>$(CREDIT_API_BASE)</string>
 	<key>TURNSTILE_SITE_KEY</key>
 	<string>$(TURNSTILE_SITE_KEY)</string>
+	<key>TONGJI_CAPTCHA_BASE</key>
+	<string>$(TONGJI_CAPTCHA_BASE)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

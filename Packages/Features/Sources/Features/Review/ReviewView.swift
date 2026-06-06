@@ -116,12 +116,11 @@ public struct ReviewView: View {
                 }
             }
             .sheet(isPresented: $showCaptcha) {
-                // In MVP, use a simplified captcha view
-                // Full version: Platform's CaptchaView with TongjiCaptcha
-                SimplifiedCaptchaView(onToken: { token in
+                CaptchaView(config: .tongjiCaptcha(action: "submit_review"), onToken: { token in
                     showCaptcha = false
                     Task { await viewModel.submit(captchaToken: token) }
                 })
+                .presentationDetents([.medium, .large])
             }
             .interactiveDismissDisabled(viewModel.isSubmitting)
             .onChange(of: viewModel.success) { _, success in
@@ -141,60 +140,6 @@ public struct ReviewView: View {
         case 5: return "强烈推荐"
         default: return ""
         }
-    }
-}
-
-// MARK: - Simplified Captcha (MVP)
-
-/// A simplified captcha placeholder used during development.
-///
-/// In production, replace this with `CaptchaView` from `Platform`:
-/// ```swift
-/// CaptchaView(config: .tongjiCaptcha(action: "submit_review"), onToken: onToken)
-/// ```
-struct SimplifiedCaptchaView: View {
-    let onToken: (String) -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
-
-            Image(systemName: "person.badge.shield.checkmark")
-                .font(.system(size: 64))
-                .foregroundStyle(.cyan)
-
-            Text("人机验证")
-                .font(.title2)
-                .bold()
-
-            Text("请点击下方按钮完成验证")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            Spacer()
-
-            Button(action: {
-                // In MVP, simulate captcha with a fixed token
-                // In production, this opens CaptchaView with TongjiCaptcha
-                onToken("mvp_simulated_captcha_token")
-            }) {
-                Text("完成验证")
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-            }
-            .buttonStyle(.glassProminent)
-            .padding(.horizontal, 40)
-
-            Button("取消", role: .cancel) {
-                dismiss()
-            }
-            .padding(.bottom)
-
-            Spacer()
-                .frame(height: 32)
-        }
-        .padding()
     }
 }
 

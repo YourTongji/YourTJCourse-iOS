@@ -55,6 +55,20 @@ public enum AppConstants {
     /// Web origin used to load Turnstile HTML so server-side hostname checks match production.
     public static let turnstileBaseURL = URL(string: "https://xk.yourtj.de")
 
+    /// The base URL for Tongji image captcha challenges.
+    /// Override at build time via `TONGJI_CAPTCHA_BASE` in `.xcconfig`.
+    public static let tongjiCaptchaBaseURL: URL = {
+        let production = URL(
+            string: "https://captcha.07211024.xyz"
+        ) ?? AppConstants.fallbackURL
+        guard let configValue = Bundle.main.object(
+            forInfoDictionaryKey: "TONGJI_CAPTCHA_BASE"
+        ) as? String, let url = URL(string: configValue) else {
+            return production
+        }
+        return url
+    }()
+
     // MARK: - App Group
 
     /// App group identifier for shared UserDefaults / Keychain access

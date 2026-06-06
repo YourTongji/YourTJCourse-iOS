@@ -19,6 +19,15 @@ public struct CaptchaView: View {
     }
 
     public var body: some View {
+        switch config {
+        case .turnstile:
+            webCaptchaView
+        case .tongjiCaptcha:
+            TongjiCaptchaView(onToken: onToken)
+        }
+    }
+
+    private var webCaptchaView: some View {
         VStack(spacing: 16) {
             if let error {
                 errorView(error)
