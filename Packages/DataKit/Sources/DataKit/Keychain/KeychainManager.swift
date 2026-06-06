@@ -20,7 +20,6 @@ public enum KeychainManager: Sendable {
             kSecAttrService: service,
             kSecAttrAccount: key,
             kSecValueData: Data(value.utf8),
-            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
 
         if useBiometrics {
@@ -28,7 +27,7 @@ public enum KeychainManager: Sendable {
             let accessControl = SecAccessControlCreateWithFlags(
                 nil,
                 kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-                .biometryCurrentSet,
+                .userPresence,
                 &cfError
             )
             guard let accessControl else {
@@ -36,6 +35,8 @@ public enum KeychainManager: Sendable {
                 throw KeychainError.saveFailed(OSStatus(errorCode))
             }
             attributes[kSecAttrAccessControl] = accessControl
+        } else {
+            attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         }
 
         let status = SecItemAdd(attributes as CFDictionary, nil)

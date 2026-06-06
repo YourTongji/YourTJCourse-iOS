@@ -37,13 +37,13 @@ public final class WalletViewModel {
 
     public func checkWallet() async {
         phase = .checking
-        if walletRepo.hasWallet() {
-            if let wallet = walletRepo.loadWallet() {
-                userHash = wallet.userHash
-                userSecret = wallet.userSecret
-                phase = .exists
-            }
+        if let wallet = walletRepo.loadWallet() {
+            userHash = wallet.userHash
+            userSecret = wallet.userSecret
+            phase = .exists
         } else {
+            userHash = ""
+            userSecret = ""
             phase = .create
         }
     }
@@ -76,21 +76,25 @@ public final class WalletViewModel {
     }
 
     public func confirmBackedUp() {
-        phase = .ready
         do {
             try walletRepo.saveWallet(mnemonic: mnemonic, userHash: userHash, userSecret: userSecret)
+            mnemonic = []
+            showMnemonic = false
+            phase = .ready
             logger.info("Wallet saved to Keychain")
         } catch {
             logger.error("Failed to save wallet: \(error.localizedDescription)")
             self.error = "保存钱包失败"
+            phase = .newWallet
+            showMnemonic = true
         }
     }
 
     public func restoreWallet() async {
         let words = restoreInput
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(separator: " ")
-            .map(String.init)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
 
         guard let wallet = walletRepo.restoreWallet(from: words) else {
             error = "助记词无效，请检查后重试"
@@ -104,6 +108,8 @@ public final class WalletViewModel {
 
         do {
             try walletRepo.saveWallet(mnemonic: words, userHash: userHash, userSecret: userSecret)
+            mnemonic = []
+            restoreInput = ""
             phase = .ready
             logger.info("Wallet restored from mnemonic")
         } catch {
