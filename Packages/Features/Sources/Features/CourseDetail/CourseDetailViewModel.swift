@@ -10,6 +10,8 @@ public final class CourseDetailViewModel {
     public private(set) var courseDetail: CourseDetail?
     public private(set) var relatedCourses: RelatedCourses?
     public private(set) var aiSummary: AiSummaryData?
+    public private(set) var aiSummaryError: String?
+    public private(set) var isAiSummaryDismissed = false
     public private(set) var isSummaryLoading = false
     public private(set) var isLoading = true
     public private(set) var error: String?
@@ -68,23 +70,33 @@ public final class CourseDetailViewModel {
         }
         isLoading = false
 
-        // Fetch AI summary — optional content, silence errors
         await loadAiSummary()
     }
 
-    private func loadAiSummary() async {
+    public func generateAiSummary() async {
+        await loadAiSummary(refresh: true)
+    }
+
+    private func loadAiSummary(refresh: Bool = false) async {
+        guard !isSummaryLoading else { return }
         isSummaryLoading = true
+        aiSummaryError = nil
+        isAiSummaryDismissed = false
+        defer { isSummaryLoading = false }
+
         do {
-            let response = try await courseRepo.getAiSummary(courseId: courseId)
+            let response = try await courseRepo.getAiSummary(courseId: courseId, refresh: refresh)
             aiSummary = response.data
         } catch {
             logger.error("Failed to load AI summary: \(error.localizedDescription)")
+            aiSummaryError = error.localizedDescription
         }
-        isSummaryLoading = false
     }
 
     public func dismissSummary() {
         aiSummary = nil
+        aiSummaryError = nil
+        isAiSummaryDismissed = true
     }
 
     public func refresh() async {

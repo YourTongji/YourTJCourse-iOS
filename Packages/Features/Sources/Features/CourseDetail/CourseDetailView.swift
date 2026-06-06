@@ -154,15 +154,55 @@ public struct CourseDetailView: View {
 
     @ViewBuilder
     private var aiSummaryCard: some View {
-        if let summary = viewModel.aiSummary, summary.hasContent {
+        if !viewModel.isAiSummaryDismissed {
+            if viewModel.isSummaryLoading {
+                aiSummaryStatusCard(
+                    message: "正在生成 AI 总结...",
+                    icon: "sparkle.magnifyingglass",
+                    isLoading: true
+                )
+            } else if let summary = viewModel.aiSummary, summary.hasContent {
+                aiSummaryContentCard(summary)
+            } else if viewModel.aiSummary != nil {
+                aiSummaryStatusCard(
+                    message: "评价数据不足，暂不能生成总结",
+                    icon: "text.bubble",
+                    isLoading: false
+                )
+            } else if let error = viewModel.aiSummaryError {
+                aiSummaryActionCard(
+                    message: error,
+                    buttonTitle: "重新生成",
+                    systemImage: "arrow.clockwise"
+                )
+            } else {
+                aiSummaryActionCard(
+                    message: "根据课程评价生成摘要",
+                    buttonTitle: "生成 AI 总结",
+                    systemImage: "sparkles"
+                )
+            }
+        }
+    }
+
+    private func aiSummaryContentCard(_ summary: AiSummaryData) -> some View {
+        aiSummaryCardContainer {
             VStack(alignment: .leading, spacing: 12) {
-                // Header with dismiss
                 HStack {
                     Image(systemName: "sparkle.magnifyingglass")
                         .foregroundStyle(.cyan)
                     Text("AI 课程总结")
                         .font(.subheadline.bold())
                     Spacer()
+                    Button {
+                        Task { await viewModel.generateAiSummary() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.subheadline)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(viewModel.isSummaryLoading)
+
                     Button {
                         viewModel.dismissSummary()
                     } label: {
@@ -173,7 +213,6 @@ public struct CourseDetailView: View {
                     .buttonStyle(.plain)
                 }
 
-                // Rating consensus
                 HStack(spacing: 4) {
                     Text("综合评价")
                         .font(.caption)
@@ -183,7 +222,6 @@ public struct CourseDetailView: View {
                         .foregroundStyle(.cyan)
                 }
 
-                // Keywords
                 if !summary.keywords.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
@@ -199,7 +237,6 @@ public struct CourseDetailView: View {
                     }
                 }
 
-                // Pros
                 if !summary.pros.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("优点").font(.caption).bold().foregroundStyle(.green)
@@ -212,7 +249,6 @@ public struct CourseDetailView: View {
                     }
                 }
 
-                // Cons
                 if !summary.cons.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("缺点").font(.caption).bold().foregroundStyle(.orange)
@@ -225,6 +261,63 @@ public struct CourseDetailView: View {
                     }
                 }
             }
+        }
+    }
+
+    private func aiSummaryStatusCard(message: String, icon: String, isLoading: Bool) -> some View {
+        aiSummaryCardContainer {
+            HStack {
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: icon)
+                        .foregroundStyle(.cyan)
+                }
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    viewModel.dismissSummary()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func aiSummaryActionCard(
+        message: String,
+        buttonTitle: String,
+        systemImage: String
+    ) -> some View {
+        aiSummaryCardContainer {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .foregroundStyle(.cyan)
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                Spacer(minLength: 8)
+                Button {
+                    Task { await viewModel.generateAiSummary() }
+                } label: {
+                    Label(buttonTitle, systemImage: systemImage)
+                        .font(.caption.bold())
+                }
+                .buttonStyle(.bordered)
+                .disabled(viewModel.isSummaryLoading)
+            }
+        }
+    }
+
+    private func aiSummaryCardContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
             .padding()
             .background(.cyan.opacity(0.05))
             .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -233,18 +326,6 @@ public struct CourseDetailView: View {
                     .stroke(.cyan.opacity(0.2), lineWidth: 1)
             )
             .padding(.horizontal)
-        } else if viewModel.isSummaryLoading {
-            HStack {
-                Spacer()
-                ProgressView()
-                    .controlSize(.small)
-                Text("正在生成 AI 总结...")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                Spacer()
-            }
-            .padding(.horizontal)
-        }
     }
 
     private func courseHeader(_ detail: CourseDetail) -> some View {
