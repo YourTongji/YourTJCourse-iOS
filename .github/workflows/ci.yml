@@ -2,13 +2,16 @@ name: CI
 
 on:
   push:
-    branches: [dev, main]
+    branches: [dev, master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   lint:
@@ -17,21 +20,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: SwiftLint
-        run: |
-          swiftlint --strict --reporter github-actions-logging 2>&1 || true
+        run: swiftlint --strict 2>&1 || true
 
   spm-test:
     name: SPM Tests
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode 26
-        run: sudo xcode-select -s /Applications/Xcode_26.app/Contents/Developer
-      - name: Resolve SPM dependencies
-        run: |
-          for pkg in DomainKit DataKit DesignSystem Platform Features; do
-            swift package --package-path Packages/$pkg resolve 2>&1 || true
-          done
+      - name: Select Xcode
+        run: xcodebuild -version
       - name: Run DomainKit tests
         run: swift test --package-path Packages/DomainKit 2>&1
       - name: Run DataKit tests
@@ -43,8 +40,8 @@ jobs:
     needs: [lint, spm-test]
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode 26
-        run: sudo xcode-select -s /Applications/Xcode_26.app/Contents/Developer
+      - name: Select Xcode
+        run: xcodebuild -version
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate Xcode project
@@ -57,5 +54,4 @@ jobs:
             -configuration Debug \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            2>&1 | xcpretty && exit ${PIPESTATUS[0]}
+            CODE_SIGNING_ALLOWED=NO
