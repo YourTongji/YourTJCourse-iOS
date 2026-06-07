@@ -32,11 +32,51 @@ private enum TeachingClassSelectionState {
     case sameCourseSelected
 }
 
-public struct SchedulerView: View {
-    @State private var viewModel = SchedulerViewModel()
-    @State private var selectedPage: SchedulerPage = .filters
+private enum SchedulerSlotSheetPage: String, CaseIterable, Identifiable {
+    case candidates
+    case timeLookup
 
-    public init() {}
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .candidates: "候选"
+        case .timeLookup: "空段找课"
+        }
+    }
+}
+
+private struct SchedulerTimetableSlot: Identifiable, Hashable, Sendable {
+    let day: Int
+    let section: Int
+
+    var id: String { "\(day)-\(section)" }
+
+    var title: String {
+        "\(dayName) 第 \(section) 节"
+    }
+
+    var dayName: String {
+        ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"][safe: day] ?? "未定"
+    }
+}
+
+private struct SchedulerClassCandidate: Identifiable, Hashable, Sendable {
+    let course: SchedulerCourseSummary
+    let teachingClass: SchedulerTeachingClass
+
+    var id: String { "\(course.courseCode)|\(teachingClass.code)" }
+}
+
+public struct SchedulerView: View {
+    @State private var viewModel: SchedulerViewModel
+    @State private var selectedPage: SchedulerPage = .filters
+    @State private var activeTimetableSlot: SchedulerTimetableSlot?
+    @State private var showsClearConfirmation = false
+
+    public init() {
+        self._viewModel = State(initialValue: SchedulerViewModel())
+    }
 
     public var body: some View {
         NavigationStack {
@@ -64,13 +104,32 @@ public struct SchedulerView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        viewModel.clearSelectedClasses()
+                        showsClearConfirmation = true
                     } label: {
                         Image(systemName: "trash")
                     }
-                    .disabled(viewModel.selectedClasses.isEmpty)
-                    .accessibilityLabel("清空已选课程")
+                    .disabled(!viewModel.hasPlannerData)
+                    .accessibilityLabel("清空排课数据")
                 }
+            }
+            .sheet(item: $activeTimetableSlot) { slot in
+                SchedulerSlotSheet(
+                    viewModel: viewModel,
+                    slot: slot,
+                    onDismiss: { activeTimetableSlot = nil }
+                )
+            }
+            .confirmationDialog(
+                "清空排课数据？",
+                isPresented: $showsClearConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("清空候选和已选课程", role: .destructive) {
+                    viewModel.clearPlannerData()
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("当前候选列表、已选课程和课表数据都会被删除，筛选条件会保留。")
             }
             .alert("提示", isPresented: .init(
                 get: { viewModel.error != nil },
@@ -329,7 +388,13 @@ public struct SchedulerView: View {
                                 .foregroundStyle(.secondary)
                                 .frame(width: 34, height: 62)
                             ForEach(1...7, id: \.self) { day in
-                                TimetableCell(entry: viewModel.scheduleEntry(day: day, section: section))
+                                Button {
+                                    activeTimetableSlot = SchedulerTimetableSlot(day: day, section: section)
+                                } label: {
+                                    TimetableCell(entry: viewModel.scheduleEntry(day: day, section: section))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(timetableCellAccessibilityLabel(day: day, section: section))
                             }
                         }
                     }
@@ -389,6 +454,13 @@ public struct SchedulerView: View {
     private static let dayNames = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
     private static let sectionGroupNames = ["", "1-2 节", "3-4 节", "5-6 节", "7-8 节", "第 9 节", "10-12 节"]
 
+    private func timetableCellAccessibilityLabel(day: Int, section: Int) -> String {
+        let slot = SchedulerTimetableSlot(day: day, section: section)
+        if let entry = viewModel.scheduleEntry(day: day, section: section) {
+            return "\(slot.title)，\(entry.courseName)"
+        }
+        return "\(slot.title)，空白时段"
+    }
 }
 
 @MainActor
@@ -409,6 +481,10 @@ public final class SchedulerViewModel {
     public private(set) var majors: [SchedulerMajor] = []
     public private(set) var isLoadingMajorOptions = false
     public private(set) var isLoadingMajorCourses = false
+    public private(set) var timetableLookupResults: [SchedulerCourseSummary] = []
+    public private(set) var isLoadingTimetableLookup = false
+    public private(set) var loadingTimetableLookupDetailsCourseCode: String?
+    public private(set) var timetableLookupExpandedCourseCode: String?
 
     public var selectedCalendarId = 0
     public var selectedGrade = 0
@@ -424,6 +500,8 @@ public final class SchedulerViewModel {
     private let schedulerRepo: SchedulerRepository
     private let logger = AppLogger(category: "Scheduler")
     private var detailsByCourseCode: [String: [SchedulerTeachingClass]] = [:]
+    private var timetableLookupDetailsByCourseCode: [String: [SchedulerTeachingClass]] = [:]
+    private var timetableLookupSlotId: String?
     private let selectedClassesStorageKey = "com.yourtj.course.scheduler.selectedClassesByCalendar"
 
     public init(schedulerRepo: SchedulerRepository = .init()) {
@@ -432,6 +510,10 @@ public final class SchedulerViewModel {
 
     public var canSearch: Bool {
         selectedCalendarId != 0 && hasSearchCriteria
+    }
+
+    public var hasPlannerData: Bool {
+        !searchResults.isEmpty || !selectedClasses.isEmpty || !timetableLookupResults.isEmpty
     }
 
     public func load() async {
@@ -470,6 +552,7 @@ public final class SchedulerViewModel {
         searchResults = []
         expandedCourseCode = nil
         detailsByCourseCode = [:]
+        clearTimetableLookup()
         restoreSelectedClasses()
         guard selectedCalendarId != 0 else { return }
         await loadGrades()
@@ -510,6 +593,7 @@ public final class SchedulerViewModel {
         error = nil
         expandedCourseCode = nil
         detailsByCourseCode = [:]
+        clearTimetableLookup()
         defer { isLoadingMajorCourses = false }
 
         do {
@@ -547,6 +631,63 @@ public final class SchedulerViewModel {
         }
     }
 
+    public func loadTimetableLookup(day: Int, section: Int) async {
+        guard selectedCalendarId != 0 else {
+            error = "请先选择学期"
+            return
+        }
+        guard !isLoadingTimetableLookup else { return }
+
+        let slotId = SchedulerTimetableSlot(day: day, section: section).id
+        if timetableLookupSlotId == slotId, !timetableLookupResults.isEmpty {
+            return
+        }
+
+        isLoadingTimetableLookup = true
+        error = nil
+        timetableLookupSlotId = slotId
+        timetableLookupExpandedCourseCode = nil
+        timetableLookupDetailsByCourseCode = [:]
+        defer { isLoadingTimetableLookup = false }
+
+        do {
+            timetableLookupResults = try await schedulerRepo.findCoursesByTime(
+                calendarId: selectedCalendarId,
+                day: day,
+                section: Self.sectionGroup(for: section)
+            )
+        } catch {
+            logger.error("Failed to load timetable slot courses: \(error.localizedDescription)")
+            self.error = error.localizedDescription
+        }
+    }
+
+    public func toggleTimetableLookupDetails(
+        for course: SchedulerCourseSummary,
+        day: Int,
+        section: Int
+    ) async {
+        if timetableLookupExpandedCourseCode == course.courseCode {
+            timetableLookupExpandedCourseCode = nil
+            return
+        }
+
+        timetableLookupExpandedCourseCode = course.courseCode
+        guard timetableLookupDetailsByCourseCode[course.courseCode] == nil else { return }
+        loadingTimetableLookupDetailsCourseCode = course.courseCode
+        defer { loadingTimetableLookupDetailsCourseCode = nil }
+
+        do {
+            timetableLookupDetailsByCourseCode[course.courseCode] = try await schedulerRepo.findCourseDetails(
+                calendarId: selectedCalendarId,
+                courseCode: course.courseCode
+            )
+        } catch {
+            logger.error("Failed to load timetable slot course details: \(error.localizedDescription)")
+            self.error = error.localizedDescription
+        }
+    }
+
     public func toggleDetails(for course: SchedulerCourseSummary) async {
         if expandedCourseCode == course.courseCode {
             expandedCourseCode = nil
@@ -573,36 +714,120 @@ public final class SchedulerViewModel {
         detailsByCourseCode[course.courseCode] ?? []
     }
 
+    public func timetableLookupClasses(
+        for course: SchedulerCourseSummary,
+        day: Int,
+        section: Int
+    ) -> [SchedulerTeachingClass] {
+        (timetableLookupDetailsByCourseCode[course.courseCode] ?? [])
+            .filter { $0.occupies(day: day, section: section) }
+    }
+
+    public func selectedClass(day: Int, section: Int) -> SchedulerSelectedClass? {
+        selectedClasses.first { item in
+            item.teachingClass.occupies(day: day, section: section)
+        }
+    }
+
+    fileprivate func loadedCandidateClasses(
+        day: Int,
+        section: Int,
+        excluding excluded: SchedulerSelectedClass? = nil
+    ) -> [SchedulerClassCandidate] {
+        searchResults.flatMap { course in
+            (detailsByCourseCode[course.courseCode] ?? [])
+                .filter { $0.occupies(day: day, section: section) }
+                .map { SchedulerClassCandidate(course: course, teachingClass: $0) }
+        }
+        .filter { candidate in
+            let selectedId = SchedulerSelectedClass(
+                course: candidate.course,
+                teachingClass: candidate.teachingClass
+            ).id
+            return selectedId != excluded?.id
+        }
+    }
+
     fileprivate func selectionState(
         course: SchedulerCourseSummary,
         teachingClass: SchedulerTeachingClass
     ) -> TeachingClassSelectionState {
+        selectionState(course: course, teachingClass: teachingClass, replacing: nil)
+    }
+
+    fileprivate func selectionState(
+        course: SchedulerCourseSummary,
+        teachingClass: SchedulerTeachingClass,
+        replacing selectedItem: SchedulerSelectedClass?
+    ) -> TeachingClassSelectionState {
         let selectedClassId = SchedulerSelectedClass(course: course, teachingClass: teachingClass).id
-        if selectedClasses.contains(where: { $0.id == selectedClassId }) {
+        let comparableClasses = selectedItem.map { item in
+            selectedClasses.filter { $0.id != item.id }
+        } ?? selectedClasses
+        if comparableClasses.contains(where: { $0.id == selectedClassId }) {
             return .selected
         }
-        if selectedClasses.contains(where: { $0.course.courseCode == course.courseCode }) {
+        if comparableClasses.contains(where: { $0.course.courseCode == course.courseCode }) {
             return .sameCourseSelected
         }
         return .none
     }
 
-    public func add(course: SchedulerCourseSummary, teachingClass: SchedulerTeachingClass) {
+    @discardableResult
+    public func add(course: SchedulerCourseSummary, teachingClass: SchedulerTeachingClass) -> Bool {
         let candidate = SchedulerSelectedClass(course: course, teachingClass: teachingClass)
         if selectedClasses.contains(where: { $0.id == candidate.id }) {
             error = "这门教学班已经在课表中"
-            return
+            return false
         }
         if let sameCourse = selectedClasses.first(where: { $0.course.courseCode == course.courseCode }) {
             error = "已选择 \(sameCourse.course.courseName)，请先移除原教学班"
-            return
+            return false
         }
         if let conflict = selectedClasses.first(where: { $0.conflicts(with: candidate) }) {
             error = "\(course.courseName) 与 \(conflict.course.courseName) 时间冲突"
-            return
+            return false
         }
         selectedClasses.append(candidate)
         persistSelectedClasses()
+        return true
+    }
+
+    @discardableResult
+    public func replace(
+        _ selectedItem: SchedulerSelectedClass,
+        course: SchedulerCourseSummary,
+        teachingClass: SchedulerTeachingClass
+    ) -> Bool {
+        let candidate = SchedulerSelectedClass(course: course, teachingClass: teachingClass)
+        guard selectedItem.id != candidate.id else {
+            error = "这门教学班已经在课表中"
+            return false
+        }
+
+        guard let replacementIndex = selectedClasses.firstIndex(where: { $0.id == selectedItem.id }) else {
+            return add(course: course, teachingClass: teachingClass)
+        }
+
+        let remaining = selectedClasses.filter { $0.id != selectedItem.id }
+        if remaining.contains(where: { $0.id == candidate.id }) {
+            error = "这门教学班已经在课表中"
+            return false
+        }
+        if let sameCourse = remaining.first(where: { $0.course.courseCode == course.courseCode }) {
+            error = "已选择 \(sameCourse.course.courseName)，请先移除原教学班"
+            return false
+        }
+        if let conflict = remaining.first(where: { $0.conflicts(with: candidate) }) {
+            error = "\(course.courseName) 与 \(conflict.course.courseName) 时间冲突"
+            return false
+        }
+
+        var updated = remaining
+        updated.insert(candidate, at: min(replacementIndex, updated.count))
+        selectedClasses = updated
+        persistSelectedClasses()
+        return true
     }
 
     public func remove(_ item: SchedulerSelectedClass) {
@@ -613,6 +838,14 @@ public final class SchedulerViewModel {
     public func clearSelectedClasses() {
         selectedClasses.removeAll()
         persistSelectedClasses()
+    }
+
+    public func clearPlannerData() {
+        searchResults = []
+        expandedCourseCode = nil
+        detailsByCourseCode = [:]
+        clearTimetableLookup()
+        clearSelectedClasses()
     }
 
     public func dismissError() {
@@ -641,6 +874,17 @@ public final class SchedulerViewModel {
             || !teacherName.trimmed.isEmpty
             || !selectedCampusId.isEmpty
             || !selectedFacultyId.isEmpty
+    }
+
+    private static func sectionGroup(for section: Int) -> Int {
+        switch section {
+        case 1, 2: 1
+        case 3, 4: 2
+        case 5, 6: 3
+        case 7, 8: 4
+        case 9: 5
+        default: 6
+        }
     }
 
     private func loadGrades() async {
@@ -674,6 +918,7 @@ public final class SchedulerViewModel {
         error = nil
         expandedCourseCode = nil
         detailsByCourseCode = [:]
+        clearTimetableLookup()
         defer { isSearching = false }
 
         do {
@@ -720,6 +965,14 @@ public final class SchedulerViewModel {
         } catch {
             logger.error("Failed to persist scheduler selections: \(error.localizedDescription)")
         }
+    }
+
+    private func clearTimetableLookup() {
+        timetableLookupResults = []
+        timetableLookupExpandedCourseCode = nil
+        timetableLookupDetailsByCourseCode = [:]
+        loadingTimetableLookupDetailsCourseCode = nil
+        timetableLookupSlotId = nil
     }
 }
 
@@ -889,6 +1142,250 @@ private struct TeachingClassRow: View {
     }
 }
 
+private struct SchedulerSlotSheet: View {
+    let viewModel: SchedulerViewModel
+    let slot: SchedulerTimetableSlot
+    let onDismiss: () -> Void
+    @State private var selectedPage: SchedulerSlotSheetPage = .candidates
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let selectedClass = viewModel.selectedClass(day: slot.day, section: slot.section) {
+                    selectedClassSection(selectedClass)
+                    loadedCandidateSection(replacing: selectedClass)
+                } else {
+                    Section {
+                        Picker("查找范围", selection: $selectedPage) {
+                            ForEach(SchedulerSlotSheetPage.allCases) { page in
+                                Text(page.title).tag(page)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    switch selectedPage {
+                    case .candidates:
+                        loadedCandidateSection(replacing: nil)
+                    case .timeLookup:
+                        timetableLookupSection
+                    }
+                }
+            }
+            .navigationTitle(slot.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成", action: onDismiss)
+                }
+            }
+            .task(id: "\(slot.id)-\(selectedPage.rawValue)") {
+                guard viewModel.selectedClass(day: slot.day, section: slot.section) == nil else { return }
+                guard selectedPage == .timeLookup else { return }
+                await viewModel.loadTimetableLookup(day: slot.day, section: slot.section)
+            }
+        }
+    }
+
+    private func selectedClassSection(_ selectedClass: SchedulerSelectedClass) -> some View {
+        Section("当前课程") {
+            SchedulerSelectedClassSummaryRow(item: selectedClass)
+
+            Button(role: .destructive) {
+                viewModel.remove(selectedClass)
+                onDismiss()
+            } label: {
+                AppActionButtonLabel("移除这门课", systemImage: "trash")
+            }
+            .buttonStyle(.appDestructiveAction)
+        }
+    }
+
+    private func loadedCandidateSection(replacing selectedClass: SchedulerSelectedClass?) -> some View {
+        let candidates = viewModel.loadedCandidateClasses(
+            day: slot.day,
+            section: slot.section,
+            excluding: selectedClass
+        )
+
+        return Section(selectedClass == nil ? "该时段候选课程" : "可替换候选课程") {
+            if candidates.isEmpty {
+                ContentUnavailableView(
+                    selectedClass == nil ? "暂无候选课程" : "暂无可替换候选",
+                    systemImage: "calendar.badge.exclamationmark",
+                    description: Text("候选页中已加载的教学班没有匹配这个时段。")
+                )
+            } else {
+                ForEach(candidates) { candidate in
+                    SchedulerSlotCandidateRow(
+                        candidate: candidate,
+                        selectionState: viewModel.selectionState(
+                            course: candidate.course,
+                            teachingClass: candidate.teachingClass,
+                            replacing: selectedClass
+                        ),
+                        actionTitle: selectedClass == nil ? "加课" : "替换",
+                        actionIcon: selectedClass == nil ? "plus.circle" : "arrow.triangle.2.circlepath",
+                        onSelect: {
+                            let didSucceed: Bool
+                            if let selectedClass {
+                                didSucceed = viewModel.replace(
+                                    selectedClass,
+                                    course: candidate.course,
+                                    teachingClass: candidate.teachingClass
+                                )
+                            } else {
+                                didSucceed = viewModel.add(
+                                    course: candidate.course,
+                                    teachingClass: candidate.teachingClass
+                                )
+                            }
+                            if didSucceed {
+                                onDismiss()
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var timetableLookupSection: some View {
+        Section {
+            if viewModel.isLoadingTimetableLookup {
+                HStack {
+                    ProgressView()
+                    Text("正在查询这个时段的课程...")
+                        .foregroundStyle(.secondary)
+                }
+            } else if viewModel.timetableLookupResults.isEmpty {
+                ContentUnavailableView(
+                    "暂无课程",
+                    systemImage: "clock.badge.questionmark",
+                    description: Text("后端未返回这个时段的可选课程。")
+                )
+            } else {
+                ForEach(viewModel.timetableLookupResults) { course in
+                    SchedulerCourseResultRow(
+                        course: course,
+                        isExpanded: viewModel.timetableLookupExpandedCourseCode == course.courseCode,
+                        isLoading: viewModel.loadingTimetableLookupDetailsCourseCode == course.courseCode,
+                        classes: viewModel.timetableLookupClasses(
+                            for: course,
+                            day: slot.day,
+                            section: slot.section
+                        ),
+                        selectionState: { teachingClass in
+                            viewModel.selectionState(course: course, teachingClass: teachingClass)
+                        },
+                        onToggle: {
+                            Task {
+                                await viewModel.toggleTimetableLookupDetails(
+                                    for: course,
+                                    day: slot.day,
+                                    section: slot.section
+                                )
+                            }
+                        },
+                        onAdd: { teachingClass in
+                            if viewModel.add(course: course, teachingClass: teachingClass) {
+                                onDismiss()
+                            }
+                        }
+                    )
+                }
+            }
+        } header: {
+            Text("空段找课")
+        } footer: {
+            Text("空段找课按该课节所属大节查询，展开课程后可选择具体教学班。")
+        }
+    }
+}
+
+private struct SchedulerSelectedClassSummaryRow: View {
+    let item: SchedulerSelectedClass
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(item.course.courseName)
+                .font(.headline)
+            Text("\(item.course.courseCode) · \(item.teachingClass.code)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(item.teachingClass.teacherNames)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(item.teachingClass.scheduleSummary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct SchedulerSlotCandidateRow: View {
+    let candidate: SchedulerClassCandidate
+    let selectionState: TeachingClassSelectionState
+    let actionTitle: String
+    let actionIcon: String
+    let onSelect: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(candidate.course.courseName)
+                        .font(.subheadline.weight(.semibold))
+                    Text("\(candidate.course.courseCode) · 教学班 \(candidate.teachingClass.code)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(candidate.teachingClass.teacherNames)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button(action: onSelect) {
+                    AppActionButtonLabel(displayActionTitle, systemImage: displayActionIcon)
+                }
+                .buttonStyle(AppActionButtonStyle(role: actionRole, size: .compact, fillsWidth: false))
+                .disabled(selectionState != .none)
+            }
+
+            Text(candidate.teachingClass.scheduleSummary)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var displayActionTitle: String {
+        switch selectionState {
+        case .none: actionTitle
+        case .selected: "已选"
+        case .sameCourseSelected: "已选其他班"
+        }
+    }
+
+    private var displayActionIcon: String {
+        switch selectionState {
+        case .none: actionIcon
+        case .selected, .sameCourseSelected: "checkmark.circle.fill"
+        }
+    }
+
+    private var actionRole: AppActionButtonStyle.Role {
+        switch selectionState {
+        case .none: .secondary
+        case .selected: .primary
+        case .sameCourseSelected: .secondary
+        }
+    }
+}
+
 private struct TimetableCell: View {
     let entry: SchedulerScheduleEntry?
 
@@ -924,6 +1421,14 @@ private struct TimetableCell: View {
     }
 }
 
+private extension SchedulerTeachingClass {
+    func occupies(day: Int, section: Int) -> Bool {
+        arrangementInfo.contains { arrangement in
+            arrangement.occupyDay == day && arrangement.occupyTime?.contains(section) == true
+        }
+    }
+}
+
 private extension String {
     var trimmed: String {
         trimmingCharacters(in: .whitespacesAndNewlines)
@@ -933,6 +1438,12 @@ private extension String {
 private extension Double {
     var cleanText: String {
         truncatingRemainder(dividingBy: 1) == 0 ? String(Int(self)) : String(format: "%.1f", self)
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
 
