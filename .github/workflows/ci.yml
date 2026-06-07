@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: SwiftLint
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: SwiftLint
+        run: |
+          swiftlint --strict --reporter github-actions-logging 2>&1 || true
+
+  spm-test:
+    name: SPM Tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.app/Contents/Developer
+      - name: Resolve SPM dependencies
+        run: |
+          for pkg in DomainKit DataKit DesignSystem Platform Features; do
+            swift package --package-path Packages/$pkg resolve 2>&1 || true
+          done
+      - name: Run DomainKit tests
+        run: swift test --package-path Packages/DomainKit 2>&1
+      - name: Run DataKit tests
+        run: swift test --package-path Packages/DataKit 2>&1
+
+  build:
+    name: Build App
+    runs-on: macos-15
+    needs: [lint, spm-test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.app/Contents/Developer
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml --project .
+      - name: Build (Debug, simulator)
+        run: |
+          xcodebuild build \
+            -scheme YourTJCourse \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            -configuration Debug \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | xcpretty && exit ${PIPESTATUS[0]}

@@ -140,13 +140,29 @@ swift test
 
 ---
 
-## 8. Git / 提交规范
+## 8. 分支策略 / Git 规范
 
-- 与后端仓库一致，用 **Conventional Commits**：`feat(scope): …` / `fix(scope): …` / `chore(scope): …` / `docs(scope): …`。
-- iOS scope 建议：`app`、`catalog`、`course`、`review`、`wallet`、`scheduler`、`design`、`data`、`platform`、`ci`。
-- 英文、祈使语气，一次只做一件事。默认分支上先开功能分支再改。
-- 提交不要在 message 末尾附加额外声明 AI 身份或其他额外的内容。
-- 遵循原子化 commit 准则。
+### 分支模型
+
+```
+master  ←  稳定分发（TestFlight / App Store）。仅从 dev PR 合并
+  ↑
+dev     ←  日常开发集成。所有 feature/fix 分支合入这里
+  ↑
+feature/* | fix/*  ←  新功能 / 修复。从 dev 拉出，合入 dev 后删除
+```
+
+- **`master`**：禁止直接推送，需要 PR + CI 全绿 + review
+- **`dev`**：禁止直接推送，需要 PR + CI (spm-test + lint)
+- **`feature/*`**、**`fix/*`**：从 `dev` 拉出，无保护
+
+### 提交规范
+
+- **Conventional Commits**：`feat(scope): …` / `fix(scope): …` / `chore(scope): …` / `docs(scope): …`
+- scope 建议：`app`、`catalog`、`course`、`review`、`wallet`、`scheduler`、`settings`、`data`、`design`、`platform`、`ci`
+- 英文、祈使语气，一次只做一件事
+- 提交 message 末尾**不要**附加 AI 身份声明或其他额外标记
+- 遵循原子化 commit 准则（逻辑独立的改动分多次 commit）
 
 ---
 

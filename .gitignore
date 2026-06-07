@@ -23,6 +23,7 @@ xcuserdata/
 .build/
 .swiftpm/
 Packages/*/.build/
+Packages/*/.swiftpm/
 
 # Secrets / local config (never commit)
 Secrets.xcconfig

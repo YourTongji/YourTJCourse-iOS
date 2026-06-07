@@ -1,0 +1,37 @@
+included:
+  - App
+  - Packages
+excluded:
+  - Packages/*/.build
+  - Packages/*/.swiftpm
+  - .build
+
+opt_in_rules:
+  - empty_count
+  - explicit_init
+  - force_unwrapping
+  - legacy_random
+  - multiline_parameters
+  - operator_usage_whitespace
+  - overridden_super_call
+  - redundant_nil_coalescing
+  - sorted_imports
+  - trailing_closure
+  - vertical_parameter_alignment_on_call
+
+disabled_rules:
+  - function_body_length
+  - type_body_length
+  - file_length
+  - line_length
+  - cyclomatic_complexity
+  - identifier_name
+  - force_cast
+  - force_try
+  - nesting
+  - trailing_comma
+  - closure_parameter_position
+  - redundant_optional_initialization
+
+trailing_comma:
+  mandatory_comma: true
