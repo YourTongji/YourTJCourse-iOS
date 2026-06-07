@@ -8,24 +8,47 @@ import Platform
 
 public typealias SchedulerStubView = SchedulerView
 
+private enum SchedulerPage: String, CaseIterable, Identifiable {
+    case filters
+    case candidates
+    case selected
+    case timetable
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .filters: "筛选"
+        case .candidates: "候选"
+        case .selected: "已选"
+        case .timetable: "课表"
+        }
+    }
+}
+
 public struct SchedulerView: View {
     @State private var viewModel = SchedulerViewModel()
+    @State private var selectedPage: SchedulerPage = .filters
 
     public init() {}
 
     public var body: some View {
         NavigationStack {
-            List {
-                filterSection
-                majorSection
-                timeLookupSection
-                selectedSection
-                timetableSection
-                resultsSection
+            VStack(spacing: 0) {
+                Picker("排课页面", selection: $selectedPage) {
+                    ForEach(SchedulerPage.allCases) { page in
+                        Text(page.title).tag(page)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .padding(.bottom, 6)
+
+                pageContent
             }
             .navigationTitle("排课")
             .task { await viewModel.load() }
-            .refreshable { await viewModel.load() }
             .onChange(of: viewModel.selectedCalendarId) { _, _ in
                 Task { await viewModel.calendarChanged() }
             }
@@ -51,6 +74,37 @@ public struct SchedulerView: View {
             } message: {
                 Text(viewModel.error ?? "")
             }
+        }
+    }
+
+    @ViewBuilder
+    private var pageContent: some View {
+        switch selectedPage {
+        case .filters:
+            List {
+                filterSection
+                majorSection
+                timeLookupSection
+            }
+            .refreshable { await viewModel.load() }
+
+        case .candidates:
+            List {
+                resultsSection
+            }
+            .refreshable { await viewModel.load() }
+
+        case .selected:
+            List {
+                selectedPageSection
+            }
+            .refreshable { await viewModel.load() }
+
+        case .timetable:
+            List {
+                timetableSection
+            }
+            .refreshable { await viewModel.load() }
         }
     }
 
@@ -92,7 +146,12 @@ public struct SchedulerView: View {
             }
 
             Button {
-                Task { await viewModel.search() }
+                Task {
+                    await viewModel.search()
+                    if viewModel.error == nil {
+                        selectedPage = .candidates
+                    }
+                }
             } label: {
                 schedulerButtonLabel(
                     viewModel.isSearching ? "搜索中..." : "搜索课程",
@@ -143,7 +202,12 @@ public struct SchedulerView: View {
             }
 
             Button {
-                Task { await viewModel.loadMajorCourses() }
+                Task {
+                    await viewModel.loadMajorCourses()
+                    if viewModel.error == nil {
+                        selectedPage = .candidates
+                    }
+                }
             } label: {
                 schedulerButtonLabel(
                     viewModel.isLoadingMajorCourses ? "加载中..." : "加载专业课表",
@@ -176,7 +240,12 @@ public struct SchedulerView: View {
             }
 
             Button {
-                Task { await viewModel.findCoursesBySelectedTime() }
+                Task {
+                    await viewModel.findCoursesBySelectedTime()
+                    if viewModel.error == nil {
+                        selectedPage = .candidates
+                    }
+                }
             } label: {
                 schedulerButtonLabel("按时间找可选课", systemImage: "clock")
             }
@@ -192,8 +261,16 @@ public struct SchedulerView: View {
     }
 
     @ViewBuilder
-    private var selectedSection: some View {
-        if !viewModel.selectedClasses.isEmpty {
+    private var selectedPageSection: some View {
+        if viewModel.selectedClasses.isEmpty {
+            Section {
+                ContentUnavailableView(
+                    "暂无已选课程",
+                    systemImage: "calendar.badge.plus",
+                    description: Text("在候选页展开教学班后加入模拟课表")
+                )
+            }
+        } else {
             Section("已选课程") {
                 ForEach(viewModel.selectedClasses) { item in
                     VStack(alignment: .leading, spacing: 6) {
