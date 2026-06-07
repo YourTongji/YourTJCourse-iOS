@@ -17,12 +17,14 @@ public final class CourseDetailViewModel {
     public private(set) var error: String?
     public private(set) var hiddenReviewIds: Set<Int>
     public private(set) var togglingLikeReviewIds: Set<Int> = []
+    public private(set) var isFavorite = false
 
     let courseId: Int
     private let courseRepo: CourseRepository
     private let reviewRepo: ReviewRepository
     private let walletRepo: WalletRepository
     private let hiddenReviewStore: HiddenReviewStore
+    private let favoriteStore: CourseFavoriteStore
     private let config = APIConfig.default
     private let logger = AppLogger(category: "CourseDetail")
 
@@ -31,14 +33,17 @@ public final class CourseDetailViewModel {
         courseRepo: CourseRepository = .init(),
         reviewRepo: ReviewRepository = .init(),
         walletRepo: WalletRepository = .init(),
-        hiddenReviewStore: HiddenReviewStore = .init()
+        hiddenReviewStore: HiddenReviewStore = .init(),
+        favoriteStore: CourseFavoriteStore = .init()
     ) {
         self.courseId = courseId
         self.courseRepo = courseRepo
         self.reviewRepo = reviewRepo
         self.walletRepo = walletRepo
         self.hiddenReviewStore = hiddenReviewStore
+        self.favoriteStore = favoriteStore
         self.hiddenReviewIds = hiddenReviewStore.load()
+        self.isFavorite = favoriteStore.isFavorite(courseId: courseId)
     }
 
     public var visibleReviews: [Review] {
@@ -60,6 +65,9 @@ public final class CourseDetailViewModel {
                 clientId: config.clientId,
                 walletUserHash: walletUserHash
             )
+            if let courseDetail {
+                isFavorite = favoriteStore.isFavorite(courseId: courseDetail.id)
+            }
             didLoadDetail = true
             do {
                 relatedCourses = try await courseRepo.getRelatedCourses(id: courseId)
@@ -150,6 +158,11 @@ public final class CourseDetailViewModel {
     public func hideReview(reviewId: Int) {
         hiddenReviewIds.insert(reviewId)
         hiddenReviewStore.save(hiddenReviewIds)
+    }
+
+    public func toggleFavorite() {
+        guard let courseDetail else { return }
+        isFavorite = favoriteStore.toggle(FavoriteCourse(course: courseDetail))
     }
 
     private func updateReview(_ review: Review) {

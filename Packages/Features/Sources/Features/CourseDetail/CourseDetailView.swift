@@ -32,6 +32,18 @@ public struct CourseDetailView: View {
         }
         .navigationTitle(viewModel.courseDetail?.name ?? "课程详情")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    viewModel.toggleFavorite()
+                } label: {
+                    Image(systemName: viewModel.isFavorite ? "star.fill" : "star")
+                        .foregroundStyle(viewModel.isFavorite ? .yellow : .primary)
+                }
+                .disabled(viewModel.courseDetail == nil)
+                .accessibilityLabel(viewModel.isFavorite ? "取消收藏课程" : "收藏课程")
+            }
+        }
         .task { await viewModel.load() }
         .sheet(isPresented: $showReportSheet) {
             reportSheet
