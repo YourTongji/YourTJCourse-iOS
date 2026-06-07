@@ -58,7 +58,7 @@ Scope 参考：`app`, `catalog`, `course`, `review`, `wallet`, `scheduler`, `set
 - ✅ Require status checks to pass
 - ✅ Require branches to be up to date
 - ✅ Require conversation resolution first
-- Status checks: `CI / lint`, `CI / spm-test`, `CI / build`
+- Status checks: `CI / SwiftLint`, `CI / SPM Tests`, `CI / Build App`
 
 ### `dev`
 - ✅ Require pull request before merging

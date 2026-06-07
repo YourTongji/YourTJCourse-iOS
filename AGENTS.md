@@ -1,190 +1,124 @@
 # AGENTS.md — YOURTJ 选课社区 · iOS 客户端
 
-本文件是给在本仓库工作的 AI 编码代理（及人类协作者）的操作指南。开工前请通读。
+本文件编码本仓库的开发规则。所有 AI 代理在编辑此代码库时必须遵守这些约定。除非用户明确指示，不得覆盖。
 
----
+## 项目定位
 
-## 1. 这是什么
+- **YOURTJ 选课社区原生 iOS 客户端**（Swift / SwiftUI，Liquid Glass 设计）
+- **纯前端消费者**：直接调用 Cloudflare Workers 后端，不自带服务端
+- 后端仓库同级：`../YourTJCourse-Serverless/`（API：`docs/api.md`，DB：`docs/database.md`，立项书：`docs/ios-app-proposal.md`）
 
-YOURTJ 选课社区的**原生 iOS 客户端**（Swift / SwiftUI，Liquid Glass 设计）。
-它是一个**纯前端消费者**：直接调用既有的 Cloudflare Workers 后端，不自带服务端。
-
-- 后端与 API 文档在同级仓库：`../YourTJCourse-Serverless/`
-  - API 参考：`../YourTJCourse-Serverless/docs/api.md`
-  - 数据库 Schema：`../YourTJCourse-Serverless/docs/database.md`
-  - 设计立项书（本 App 的依据）：`../YourTJCourse-Serverless/docs/ios-app-proposal.md`
-- 目标与功能范围以 **proposal** 为准；本文件只讲"怎么写、怎么跑、规矩是什么"。
-
-**当前状态：Greenfield（脚手架阶段）**——尚无 Xcode 工程。第一个实质任务是按 §4 建立工程骨架。
-
----
-
-## 2. 技术栈（已定）
+## 技术栈
 
 | 维度 | 选型 |
 |---|---|
-| 语言 | Swift 6（开启 strict concurrency） |
-| UI | SwiftUI（iOS 26 SDK / Xcode 26），Liquid Glass |
-| 状态 | Observation（`@Observable` / `@State` / `@Environment`），MV 模式 |
+| 语言 | Swift 6（strict concurrency） |
+| UI | SwiftUI，iOS 18+（iOS 26 Liquid Glass 用 `#available` 回退） |
+| 状态 | `@Observable` + `@Environment`，MV 模式 |
 | 异步 | Swift Concurrency（async/await、actor、`@MainActor`） |
-| 网络 | URLSession（自封装 `APIClient`，**不引入网络第三方库**） |
-| 加密 | CryptoKit（HMAC-SHA256 计算 `edit_token`） |
-| 安全存储 | Keychain（钱包密钥/助记词） |
-| Markdown | swift-markdown-ui（或自研 `AttributedString` 渲染） |
-| 人机验证 | WKWebView 桥接（Turnstile / TongjiCaptcha 无原生 SDK） |
-| 依赖管理 | Swift Package Manager |
-| 测试 | Swift Testing（单元）+ XCTest（UI） |
+| 网络 | URLSession + URLCache（**零网络第三方依赖**） |
+| 加密 | CryptoKit（HMAC-SHA256） |
+| 安全存储 | Keychain |
+| Markdown | swift-markdown-ui |
+| Captcha | WKWebView 桥接（Turnstile / TongjiCaptcha） |
+| 包管理 | Swift Package Manager |
+| 项目生成 | XcodeGen（`project.yml`） |
+| 测试 | Swift Testing + XCTest |
 
-> **最低部署版本确定**（兼容 iOS 18）。代码新增"仅 iOS 26"的 API 时，需兼容 18，用 `if #available` 包裹并提供回退。
-
----
-
-## 3. 架构与约定
+## 架构
 
 分层（自上而下单向依赖）：
 
 ```
-App        @main、RootView、底部 TabView、启动闸门、依赖装配(DI)
-Features   按页面/领域分模块：Catalog / CourseDetail / Review / Wallet / Scheduler / Settings
-           每个 Feature = View(SwiftUI) + Store(@Observable) + 局部 Model
-DomainKit  纯 Swift 领域模型与用例（Course/Review/Wallet/Semester…）。不依赖 SwiftUI/网络/Foundation 网络
-DataKit    APIClient、各 Repository（端点封装+解码+缓存）、Keychain、CreditClient、edit_token(HMAC)
-Platform   DesignSystem(Liquid Glass 组件)、Markdown、Captcha 桥接、Logger、工具
+App          @main, RootView, TabView, DI 装配
+Features     Catalog / CourseDetail / Review / Wallet / Scheduler / Settings
+             每个 Feature = View + Store(@Observable)
+DomainKit    纯模型（Course/Review/Wallet/Semester…）。不依赖 UI 或网络
+DataKit      APIClient, Repositories, Keychain, HMAC, Mnemonic
+DesignSystem Liquid Glass 组件, 青色主题, 可复用 UI 组件
+Platform     Markdown, Captcha 桥接, Logger, Constants
 ```
 
 **规则**
-- **MV 而非重型 MVVM**：用 `@Observable` 的 `Store` 持状态与意图方法，View 直接订阅。不要为了架构而架构，避免样板。
-- **Repository 走协议 + 依赖注入**（通过 `Environment`）。便于 mock 单测。Domain 层尽量纯函数（如跨学期聚合、学期排序），直接覆盖测试。
-- **并发**：UI 相关 `@MainActor`；共享可变状态用 `actor`；不要在视图里堆同步阻塞调用。
-- **命名/风格**：遵循 Swift API Design Guidelines。视图小而可组合，避免巨型 View；每个可复用组件配 `#Preview`。
-- **禁止**：`!` 强解包、`try!`、生产代码 `print`（用 `os.Logger`）。错误要显式处理并有用户可见态。
-- **格式化**：提交前跑 `swift-format`（或 SwiftLint）。配置进仓库根。
+- **MV 而非 MVVM**：`@Observable` Store 持状态与意图方法，View 直接订阅。不要 `ObservableObject`、`Published` 或协议样板。
+- **Repository + 构造注入**：不用 Environment DI——直接 `init(repo: .init())` 给默认值，单测时传 mock。
+- **禁止**：`!` 强解包、`try!`、`print()`。错误必须显式处理并有用户可见态。
+- **并发**：UI 代码全 `@MainActor`；共享可变状态用 `actor`。
+- **格式化**：提交前 `swiftlint --strict`。
 
-### 计划目录结构
+## 代码规范
 
-```
-YourTJCourse-iOS/
-├─ App/                  # 薄 app target：@main、RootView、启动闸门、DI 装配
-├─ Packages/            # 本地 SPM 包
-│  ├─ DesignSystem/     # Liquid Glass 组件、配色(青色系)、字体
-│  ├─ DomainKit/        # 纯模型 + 用例
-│  ├─ DataKit/          # APIClient / Repositories / Keychain / CreditClient / edit_token
-│  ├─ Platform/         # Markdown、Captcha(WKWebView) 桥接、Logger
-│  └─ Features/         # Catalog / CourseDetail / Review / Wallet / Scheduler / Settings
-├─ Config/              # *.xcconfig（按 scheme 配 API_BASE）
-├─ Tests/               # 或各包内置 Tests
-├─ AGENTS.md
-├─ README.md
-└─ .gitignore
-```
+- **注释解释 why 而非 what**。代码本身已经说明它在做什么。doc comment 仅在 API 用途不直观时才需要。
+- **禁止单字母变量名**（`a`、`b`、`c`、`s`、`v` 等），例外：`i`/`j` 作为循环索引。域内标准缩写允许（`img`、`btn`、`ctx`、`cfg`、`repo`）。
+- **`XxxInfo`、`XxxData`、`XxxDetail`** 尽量避免——找到真正表达含义的名字。
+- **同一概念跨文件命名必须一致**。`CourseRepository` 的 `getCourses`，`CatalogViewModel` 里不能写成 `fetchCourseList`。
+- **不需要的注释头**：`// ── Foo ──` 分隔线在 200 行以下文件禁止。文件头 `//  Created by` 禁止。
+- **无 TODO 注释**——用真实 issue tracking。
 
----
+## Liquid Glass 使用
 
-## 4. 构建 / 运行 / 测试
+- 玻璃仅用于**导航/控件层**：TabBar、Toolbar、搜索条、浮动按钮、Sheet 把手。
+- 内容卡片用实色背景 + 柔光阴影——**禁止满屏玻璃**。
+- **无障碍**：检查 `accessibilityReduceTransparency`，提供不透明回退。
+- 品牌强调色：青色系（cyan），与 Web 端一致。
 
-> 工程尚未创建。建立骨架时：用 Xcode 26 新建 App（SwiftUI 生命周期），把领域/数据/设计系统拆成 `Packages/` 下的本地 SPM 包，App target 仅做装配。
+## 安全与合规（MUST）
 
-工程就绪后的常用命令（占位，按实际 scheme/路径调整）：
+1. **密钥只进 Keychain**：`userSecret`、助记词只存 Keychain（可加生物识别）。严禁 UserDefaults、plist、日志、明文文件。
+2. **评论原生渲染**：Markdown → `AttributedString` / swift-markdown-ui。禁止 WKWebView/HTML 渲染用户内容（根除 XSS）。WebView 仅用于 captcha。
+3. **编辑鉴权算法须与后端一致**：`edit_token = HMAC-SHA256(userSecret, "jcourse:edit-review:" + reviewId)`（CryptoKit，小写 hex）。私钥不出设备。
+4. **HTTPS only**：Release 不放宽 ATS。Debug 仅放宽 `127.0.0.1`。
+5. **UGC 合规**：每条评价必须有举报按钮、EULA 与社区规范入口、屏蔽/隐藏功能（App Store Guideline 1.2）。
+6. **点赞 clientId**：本地随机 UUID，持久化到 UserDefaults（非敏感）。不做设备指纹采集。
 
-```bash
-# 构建（模拟器）
-xcodebuild -scheme YourTJCourse -destination 'platform=iOS Simulator,name=iPhone 16 Pro' build
+## API 对接
 
-# 跑 UI/集成测试
-xcodebuild -scheme YourTJCourse -destination 'platform=iOS Simulator,name=iPhone 16 Pro' test
+- 公开接口无需鉴权。原生 HTTP 不受 CORS 限制。
+- 缓存：后端返回 `Cache-Control`（含 `stale-while-revalidate`），`URLCache` 配置 `.useProtocolCachePolicy` 即可秒开。
+- 端点全集见 `../YourTJCourse-Serverless/docs/api.md`。
+- 涉及后端改动（新端点、新字段）时：在同级仓库实现代码**但不要 commit/push**，标记给用户确认。
 
-# 本地 SPM 包单测（在包目录内）
-swift test
-```
-
-**API base（按环境切换，走 `Config/*.xcconfig`）**
-- Debug → 本地后端 `http://127.0.0.1:8787`（在 `../YourTJCourse-Serverless/backend` 跑 `npm run dev`，需先 `db:init:local` + `db:seed:local`）
-- Release → 生产 `https://jcourse.yourtj.de`
-- Credit 服务 base：`https://core.credit.yourtj.de`
-
-> ⚠️ xcconfig 里 `//` 是注释，URL 要写成 `API_BASE = http:/$()/127.0.0.1:8787` 以转义双斜杠。
-> ⚠️ Debug 连本地 `http://` 需在 Debug 配置放宽 ATS（仅 Debug，**Release 禁止放宽**）。
-
----
-
-## 5. 后端对接要点
-
-- 公开接口**无需鉴权**；原生 HTTP 不受浏览器 CORS 限制，可直接调。
-- 尊重后端返回的 `Cache-Control`（含 `stale-while-revalidate`）：配置 `URLCache`，策略用 `.useProtocolCachePolicy`，即可获得二次进入秒开。
-- 端点全集见 `../YourTJCourse-Serverless/docs/api.md`。本 App 关注：
-  - 启动/设置：`POST /api/startup/verify`、`GET /api/settings/runtime-state`、`GET /api/departments`
-  - 课程：`GET /api/courses`、`GET /api/course/:id`、`/related`、`/by-code/:code`
-  - 评价：`POST /api/review`、`PATCH /api/review/:id/edit-token`、`PUT /api/review/:id`、`POST|DELETE /api/review/:id/like`
-  - 排课：`/api/getAll*`、`/api/find*`（P1）
-
----
-
-## 6. 安全与合规（MUST）
-
-1. **密钥只进 Keychain**：钱包 `userSecret`、助记词只存 Keychain（可加生物识别保护），**严禁** UserDefaults / plist / 日志 / 明文文件。（这是修复 Web 端 issue #15 的初衷，别在 iOS 重蹈覆辙。）
-2. **评论原生渲染**：用 Markdown→`AttributedString`/swift-markdown-ui 渲染，**严禁**用 WKWebView/HTML 渲染用户内容（从根上免 XSS）。WebView 仅用于承载 captcha 验证页。
-3. **编辑鉴权算法须与后端一致**：
-   `edit_token = HMAC-SHA256(userSecret, "jcourse:edit-review:" + reviewId)`（CryptoKit，输出小写 hex）。私钥不出设备。
-4. **HTTPS only**：Release 不放宽 ATS；不硬编码任何密钥/Token 进仓库。
-5. **UGC 合规（App Store Guideline 1.2）**：评价展示必须保留**举报**、**屏蔽作者/隐藏单条**、EULA 与社区规范入口。后端可能需新增 `POST /api/review/:id/report`（与后端协商）。
-6. 点赞 `clientId` 用本地随机 UUID（持久化到 Keychain/UserDefaults 均可，非敏感）；不做设备指纹采集。
-
----
-
-## 7. Liquid Glass 使用规范
-
-- 玻璃只用于**导航/控件层**：TabBar、Toolbar、搜索条、浮动按钮、Sheet 把手；内容卡片用实色 + 柔光，避免"满屏玻璃"。
-- 常用 API：`.glassEffect(_:in:)`、`GlassEffectContainer(spacing:)`（成组融合/形变）、`@Namespace` + `.glassEffectID(_:in:)`（morph）、`.buttonStyle(.glass)/.glassProminent`。Toolbar/Sheet 在 iOS 26 自动玻璃。
-- **无障碍**：尊重"减弱透明度/增强对比度/减弱动态"。自定义玻璃组件要用 `accessibilityReduceTransparency` 等环境值提供不透明回退，保证对比度。
-- 品牌强调色沿用网页青色系（cyan）。
-
----
-
-## 8. 分支策略 / Git 规范
-
-### 分支模型
+## 分支策略
 
 ```
-master  ←  稳定分发（TestFlight / App Store）。仅从 dev PR 合并
+master  稳定分发（TestFlight / App Store）。仅从 dev PR 合并
   ↑
-dev     ←  日常开发集成。所有 feature/fix 分支合入这里
+dev     日常开发集成。所有 feature/fix PR 合入这里
   ↑
-feature/* | fix/*  ←  新功能 / 修复。从 dev 拉出，合入 dev 后删除
+feature/* | fix/*  从 dev 拉出，合入 dev 后删除
 ```
 
-- **`master`**：禁止直接推送，需要 PR + CI 全绿 + review
-- **`dev`**：禁止直接推送，需要 PR + CI (spm-test + lint)
-- **`feature/*`**、**`fix/*`**：从 `dev` 拉出，无保护
+- **`master`**：禁止直接推送。需要 PR + CI 全绿 + 1 review。
+- **`dev`**：禁止直接推送。需要 PR + CI（spm-test + lint）。
+- **`feature/*` / `fix/*`**：无保护。从 `dev` 拉出。
+- **不要丢弃未提交的更改**：需要切换分支时用 `git stash`，不要 `git reset --hard`、`git checkout -f` 或 `git stash drop`。
+- **不要直接推 `master`**，即使有权限。
 
-### 提交规范
+## 提交规范
 
 - **Conventional Commits**：`feat(scope): …` / `fix(scope): …` / `chore(scope): …` / `docs(scope): …`
-- scope 建议：`app`、`catalog`、`course`、`review`、`wallet`、`scheduler`、`settings`、`data`、`design`、`platform`、`ci`
-- 英文、祈使语气，一次只做一件事
-- 提交 message 末尾**不要**附加 AI 身份声明或其他额外标记
-- 遵循原子化 commit 准则（逻辑独立的改动分多次 commit）
+- scope：`app`、`catalog`、`course`、`review`、`wallet`、`scheduler`、`settings`、`data`、`design`、`platform`、`ci`
+- 英文、祈使语气。一次只做一件事。message 末尾不加 AI 身份声明或其他标记。
+- 原子化 commit：逻辑独立的改动分开 commit。不要把不相关的 refactor 和功能 squash 在一起。
 
----
-
-## 9. Do / Don't 速查
+## Do / Don't
 
 **Do**
-- 先读 proposal 与 `docs/api.md` 再动手。
-- 新功能：Domain 纯逻辑 + 单测先行，再接 Repository，再做 View。
-- 用 `#Preview` 驱动 UI；模拟器跑通再说完成。
+- 新功能先纯逻辑 + 单测，再 Repository，再 View。
+- 每个可复用组件配 `#Preview`。
 
 **Don't**
-- ❌ 把 App 做成 WebView 套壳。
-- ❌ 用 WebView/HTML 渲染评论。
-- ❌ 把密钥写进 UserDefaults/代码/日志。
-- ❌ 引入重型架构框架或不必要的第三方依赖。
-- ❌ 擅自改"最低 iOS 版本""新增后端端点"等跨端决定——先确认。
+- ❌ WebView 套壳 App。
+- ❌ WebView/HTML 渲染评论。
+- ❌ 密钥进 UserDefaults / 日志 / 代码。
+- ❌ 引入重型框架或不必要的第三方依赖（Firebase、RxSwift、Alamofire 等）。
+- ❌ 擅自改最低 iOS 版本、增后端端点等跨端决定——先确认。
 
----
-
-## 10. 参考
+## 参考
 
 - 立项书：`../YourTJCourse-Serverless/docs/ios-app-proposal.md`
 - API：`../YourTJCourse-Serverless/docs/api.md`
 - DB：`../YourTJCourse-Serverless/docs/database.md`
-- 后端源码：`../YourTJCourse-Serverless/backend/src/`（评价/编辑鉴权见 `routes/public.ts`）
+- 后端源码：`../YourTJCourse-Serverless/backend/src/`
+- CI：`.github/workflows/ci.yml`
+- 贡献指南：`CONTRIBUTING.md`
