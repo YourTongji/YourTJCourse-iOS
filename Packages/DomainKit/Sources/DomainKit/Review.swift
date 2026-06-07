@@ -77,6 +77,7 @@ public struct Review: Codable, Identifiable, Hashable, Sendable {
         case comment
         case createdAt = "created_at"
         case likeCount = "like_count"
+        case approveCount = "approve_count"
         case liked
         case canEdit
         case canEditSnake = "can_edit"
@@ -93,13 +94,15 @@ public struct Review: Codable, Identifiable, Hashable, Sendable {
         rating = try container.decodeIfPresent(Int.self, forKey: .rating) ?? 0
         comment = try container.decodeIfPresent(String.self, forKey: .comment) ?? ""
         createdAt = try container.decodeStringOrNumberIfPresent(forKey: .createdAt) ?? ""
-        likeCount = try container.decodeIfPresent(Int.self, forKey: .likeCount) ?? 0
+        likeCount = try container.decodeIfPresent(Int.self, forKey: .likeCount)
+            ?? container.decodeIfPresent(Int.self, forKey: .approveCount)
+            ?? 0
         liked = try container.decodeIfPresent(Bool.self, forKey: .liked) ?? false
         canEdit = try container.decodeBoolOrIntIfPresent(forKey: .canEdit)
             ?? container.decodeBoolOrIntIfPresent(forKey: .canEditSnake)
             ?? false
-        reviewerName = try container.decodeIfPresent(String.self, forKey: .reviewerName)
-        reviewerAvatar = try container.decodeIfPresent(String.self, forKey: .reviewerAvatar)
+        reviewerName = try container.decodeIfPresent(String.self, forKey: .reviewerName)?.nonEmptyTrimmed
+        reviewerAvatar = try container.decodeIfPresent(String.self, forKey: .reviewerAvatar)?.nonEmptyTrimmed
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -116,5 +119,12 @@ public struct Review: Codable, Identifiable, Hashable, Sendable {
         try container.encode(canEdit, forKey: .canEditSnake)
         try container.encodeIfPresent(reviewerName, forKey: .reviewerName)
         try container.encodeIfPresent(reviewerAvatar, forKey: .reviewerAvatar)
+    }
+}
+
+private extension String {
+    var nonEmptyTrimmed: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 }

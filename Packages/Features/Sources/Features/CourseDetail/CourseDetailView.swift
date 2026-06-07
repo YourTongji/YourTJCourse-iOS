@@ -128,6 +128,7 @@ public struct CourseDetailView: View {
                             ReviewCard(
                                 review: review,
                                 canEdit: review.canEdit,
+                                isLikeUpdating: viewModel.togglingLikeReviewIds.contains(review.id),
                                 onLike: { Task { await viewModel.toggleLike(for: review.id) } },
                                 onEdit: {
                                     reviewToEdit = review
@@ -474,6 +475,7 @@ public struct CourseDetailView: View {
 struct ReviewCard: View {
     let review: Review
     let canEdit: Bool
+    let isLikeUpdating: Bool
     let onLike: () -> Void
     let onEdit: () -> Void
     let onHide: () -> Void
@@ -508,14 +510,20 @@ struct ReviewCard: View {
             HStack {
                 Button(action: onLike) {
                     HStack(spacing: 4) {
-                        Image(systemName: review.liked ? "hand.thumbsup.fill" : "hand.thumbsup")
-                            .font(.caption)
+                        if isLikeUpdating {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: review.liked ? "hand.thumbsup.fill" : "hand.thumbsup")
+                                .font(.caption)
+                        }
                         Text("\(review.likeCount)")
                             .font(.caption)
                     }
                     .foregroundStyle(review.liked ? .cyan : .secondary)
                 }
                 .buttonStyle(.plain)
+                .disabled(isLikeUpdating)
 
                 Spacer()
 
@@ -584,6 +592,7 @@ struct ReviewCard: View {
             reviewerAvatar: nil
         ),
         canEdit: true,
+        isLikeUpdating: false,
         onLike: {},
         onEdit: {},
         onHide: {},
@@ -609,6 +618,7 @@ struct ReviewCard: View {
             reviewerAvatar: "https://i.pravatar.cc/80?u=li"
         ),
         canEdit: true,
+        isLikeUpdating: false,
         onLike: {},
         onEdit: {},
         onHide: {},

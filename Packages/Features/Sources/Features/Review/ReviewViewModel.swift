@@ -85,8 +85,8 @@ public final class ReviewViewModel {
                     comment: comment.trimmingCharacters(in: .whitespacesAndNewlines),
                     semester: normalizedSemester,
                     turnstileToken: captchaToken,
-                    reviewerName: reviewerName.isEmpty ? nil : reviewerName,
-                    reviewerAvatar: reviewerAvatar.isEmpty ? nil : reviewerAvatar,
+                    reviewerName: normalizedReviewerName,
+                    reviewerAvatar: normalizedReviewerAvatar,
                     walletUserHash: wallet?.userHash
                 )
 
@@ -128,8 +128,8 @@ public final class ReviewViewModel {
                     turnstileToken: captchaToken,
                     editToken: editToken,
                     walletUserHash: wallet.userHash,
-                    reviewerName: reviewerName.isEmpty ? nil : reviewerName,
-                    reviewerAvatar: reviewerAvatar.isEmpty ? nil : reviewerAvatar
+                    reviewerName: normalizedReviewerName,
+                    reviewerAvatar: normalizedReviewerAvatar
                 )
                 successMessage = "评价修改成功"
                 success = true
@@ -155,6 +155,14 @@ public final class ReviewViewModel {
         return value.isEmpty ? "其他" : value
     }
 
+    private var normalizedReviewerName: String? {
+        reviewerName.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
+
+    private var normalizedReviewerAvatar: String? {
+        reviewerAvatar.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
+
     private func successMessage(for reward: CreditRewardStatus?) -> String {
         guard let reward else { return "评价提交成功" }
         if reward.ok {
@@ -165,5 +173,11 @@ public final class ReviewViewModel {
         }
         let suffix = reward.error.map { "：\($0)" } ?? ""
         return "评价提交成功，但评课激励发放失败\(suffix)"
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

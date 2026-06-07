@@ -87,6 +87,50 @@ import Testing
     #expect(detail.reviews.first?.canEdit == true)
 }
 
+@Test func decodesReviewLikeCountFromApproveCountFallback() throws {
+    let json = """
+    {
+      "sqid": "hJqd",
+      "id": 16668,
+      "course_id": 2849,
+      "semester": "2025-2026第一学期",
+      "rating": 5,
+      "comment": "课程内容",
+      "created_at": 1772885683,
+      "approve_count": 7,
+      "liked": true
+    }
+    """
+
+    let review = try JSONDecoder().decode(Review.self, from: Data(json.utf8))
+
+    #expect(review.likeCount == 7)
+    #expect(review.liked == true)
+}
+
+@Test func decodesBlankReviewerMetadataAsNil() throws {
+    let json = """
+    {
+      "sqid": "hJqd",
+      "id": 16668,
+      "course_id": 2849,
+      "semester": "2025-2026第一学期",
+      "rating": 5,
+      "comment": "课程内容",
+      "created_at": 1772885683,
+      "like_count": 0,
+      "liked": false,
+      "reviewer_name": "   ",
+      "reviewer_avatar": ""
+    }
+    """
+
+    let review = try JSONDecoder().decode(Review.self, from: Data(json.utf8))
+
+    #expect(review.reviewerName == nil)
+    #expect(review.reviewerAvatar == nil)
+}
+
 @Test func decodesProductionRelatedCoursesResponse() throws {
     let json = """
     {

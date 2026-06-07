@@ -16,6 +16,7 @@ public final class CourseDetailViewModel {
     public private(set) var isLoading = true
     public private(set) var error: String?
     public private(set) var hiddenReviewIds: Set<Int>
+    public private(set) var togglingLikeReviewIds: Set<Int> = []
 
     let courseId: Int
     private let courseRepo: CourseRepository
@@ -51,6 +52,7 @@ public final class CourseDetailViewModel {
     public func load() async {
         isLoading = true
         error = nil
+        var didLoadDetail = false
         do {
             let walletUserHash = walletRepo.loadWallet()?.userHash
             courseDetail = try await courseRepo.getCourseDetail(
@@ -58,6 +60,7 @@ public final class CourseDetailViewModel {
                 clientId: config.clientId,
                 walletUserHash: walletUserHash
             )
+            didLoadDetail = true
             do {
                 relatedCourses = try await courseRepo.getRelatedCourses(id: courseId)
             } catch {
@@ -70,7 +73,9 @@ public final class CourseDetailViewModel {
         }
         isLoading = false
 
-        await loadAiSummary()
+        if didLoadDetail {
+            await loadAiSummary()
+        }
     }
 
     public func generateAiSummary() async {
@@ -105,18 +110,30 @@ public final class CourseDetailViewModel {
 
     public func toggleLike(for reviewId: Int) async {
         guard let review = courseDetail?.reviews.first(where: { $0.id == reviewId }) else { return }
+        guard !togglingLikeReviewIds.contains(reviewId) else { return }
+
+        togglingLikeReviewIds.insert(reviewId)
+        let targetLiked = !review.liked
+        let optimisticLikeCount = max(0, review.likeCount + (targetLiked ? 1 : -1))
+        updateReview(review.updatingLikeState(liked: targetLiked, likeCount: optimisticLikeCount))
+        defer { togglingLikeReviewIds.remove(reviewId) }
 
         do {
-            if review.liked {
-                let response = try await reviewRepo.unlikeReview(reviewId: reviewId, clientId: config.clientId)
-                updateReview(reviewId: reviewId, liked: false, likeCount: response.likeCount)
+            let response: LikeResponse
+            if targetLiked {
+                response = try await reviewRepo.likeReview(reviewId: reviewId, clientId: config.clientId)
             } else {
-                let response = try await reviewRepo.likeReview(reviewId: reviewId, clientId: config.clientId)
-                updateReview(reviewId: reviewId, liked: true, likeCount: response.likeCount)
+                response = try await reviewRepo.unlikeReview(reviewId: reviewId, clientId: config.clientId)
             }
+
+            guard response.success else {
+                throw APIError.invalidResponse
+            }
+
+            updateReview(review.updatingLikeState(liked: response.liked, likeCount: response.likeCount))
         } catch {
             logger.error("Failed to toggle like: \(error.localizedDescription)")
-            await load()
+            updateReview(review)
         }
     }
 
@@ -135,15 +152,12 @@ public final class CourseDetailViewModel {
         hiddenReviewStore.save(hiddenReviewIds)
     }
 
-    private func updateReview(reviewId: Int, liked: Bool, likeCount: Int) {
-        guard let detail = courseDetail,
-              let review = detail.reviews.first(where: { $0.id == reviewId }) else {
+    private func updateReview(_ review: Review) {
+        guard let detail = courseDetail else {
             return
         }
 
-        courseDetail = detail.replacingReview(
-            review.updatingLikeState(liked: liked, likeCount: likeCount)
-        )
+        courseDetail = detail.replacingReview(review)
     }
 }
 
