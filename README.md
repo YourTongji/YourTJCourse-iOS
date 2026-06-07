@@ -49,17 +49,13 @@
 
 ## Screenshots
 
-<p align="center">
-  <img src="Screenshots/01-catalog.png" width="190" alt="课程列表">
-  <img src="Screenshots/02-course-detail.png" width="190" alt="课程详情 + AI 总结">
-  <img src="Screenshots/03-scheduler.png" width="190" alt="排课模拟器">
-  <img src="Screenshots/04-scheduler-results.png" width="190" alt="排课检索">
-  <img src="Screenshots/05-wallet.png" width="190" alt="积分钱包">
-</p>
+| 📚 课程列表 | 🤖 AI 课程总结 | 📅 排课模拟器 |
+|:---:|:---:|:---:|
+| ![课程列表](Screenshots/01-catalog.png) | ![课程详情](Screenshots/02-course-detail.png) | ![排课模拟器](Screenshots/03-scheduler.png) |
 
-<p align="center">
-  📚 课程列表 &nbsp;&nbsp;&nbsp; 🤖 AI 课程总结 &nbsp;&nbsp;&nbsp; 📅 排课模拟器 &nbsp;&nbsp;&nbsp; 🔍 排课检索 &nbsp;&nbsp;&nbsp; 💰 积分钱包
-</p>
+| 🔍 排课检索 | 💰 积分钱包 |
+|:---:|:---:|
+| ![排课检索](Screenshots/04-scheduler-results.png) | ![积分钱包](Screenshots/05-wallet.png) |
 
 ## Architecture
 
