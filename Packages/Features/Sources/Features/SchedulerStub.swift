@@ -68,11 +68,51 @@ private struct SchedulerClassCandidate: Identifiable, Hashable, Sendable {
     var id: String { "\(course.courseCode)|\(teachingClass.code)" }
 }
 
+fileprivate struct SchedulerCourseReviewInfo: Equatable, Sendable {
+    let courseId: Int
+    let rating: Double
+    let reviewCount: Int
+    let teacherName: String
+    let isFavorite: Bool
+
+    init(course: CourseDetail, isFavorite: Bool) {
+        self.courseId = course.id
+        self.rating = course.rating
+        self.reviewCount = course.reviewCount
+        self.teacherName = course.teacherName
+        self.isFavorite = isFavorite
+    }
+
+    init(favorite: FavoriteCourse) {
+        self.courseId = favorite.id
+        self.rating = favorite.rating
+        self.reviewCount = favorite.reviewCount
+        self.teacherName = favorite.teacherName
+        self.isFavorite = true
+    }
+
+    var ratingGrade: String {
+        guard reviewCount > 0 else { return "暂无" }
+        switch rating {
+        case 4.5...: return "优秀"
+        case 4.0..<4.5: return "推荐"
+        case 3.0..<4.0: return "中等"
+        default: return "谨慎"
+        }
+    }
+
+    var ratingText: String {
+        guard reviewCount > 0 else { return "暂无评课" }
+        return "\(ratingGrade) \(String(format: "%.1f", rating)) · \(reviewCount) 评"
+    }
+}
+
 public struct SchedulerView: View {
     @State private var viewModel: SchedulerViewModel
     @State private var selectedPage: SchedulerPage = .filters
     @State private var activeTimetableSlot: SchedulerTimetableSlot?
     @State private var showsClearConfirmation = false
+    @State private var showsFavoriteImport = false
 
     public init() {
         self._viewModel = State(initialValue: SchedulerViewModel())
@@ -95,6 +135,9 @@ public struct SchedulerView: View {
             }
             .navigationTitle("排课")
             .task { await viewModel.load() }
+            .onAppear {
+                viewModel.refreshFavorites()
+            }
             .onChange(of: viewModel.selectedCalendarId) { _, _ in
                 Task { await viewModel.calendarChanged() }
             }
@@ -117,6 +160,12 @@ public struct SchedulerView: View {
                     viewModel: viewModel,
                     slot: slot,
                     onDismiss: { activeTimetableSlot = nil }
+                )
+            }
+            .sheet(isPresented: $showsFavoriteImport) {
+                SchedulerFavoriteImportSheet(
+                    viewModel: viewModel,
+                    onDismiss: { showsFavoriteImport = false }
                 )
             }
             .confirmationDialog(
@@ -155,6 +204,7 @@ public struct SchedulerView: View {
 
         case .candidates:
             List {
+                favoriteImportSection
                 resultsSection
             }
             .refreshable { await viewModel.load() }
@@ -405,6 +455,27 @@ public struct SchedulerView: View {
     }
 
     @ViewBuilder
+    private var favoriteImportSection: some View {
+        Section {
+            Button {
+                viewModel.refreshFavorites()
+                showsFavoriteImport = true
+            } label: {
+                Label("导入已收藏课程", systemImage: "star")
+            }
+            .disabled(viewModel.favoriteCourses.isEmpty)
+
+            if viewModel.favoriteCourses.isEmpty {
+                Text("在评课详情页收藏课程后，可以从这里加入候选列表。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("收藏")
+        }
+    }
+
+    @ViewBuilder
     private var resultsSection: some View {
         Section {
             if viewModel.isSearching {
@@ -423,6 +494,8 @@ public struct SchedulerView: View {
                 ForEach(viewModel.searchResults) { course in
                     SchedulerCourseResultRow(
                         course: course,
+                        reviewInfo: viewModel.reviewInfo(for: course),
+                        isFavorite: viewModel.isFavorite(course: course),
                         isExpanded: viewModel.expandedCourseCode == course.courseCode,
                         isLoading: viewModel.loadingDetailsCourseCode == course.courseCode,
                         classes: viewModel.classes(for: course),
@@ -485,6 +558,7 @@ public final class SchedulerViewModel {
     public private(set) var isLoadingTimetableLookup = false
     public private(set) var loadingTimetableLookupDetailsCourseCode: String?
     public private(set) var timetableLookupExpandedCourseCode: String?
+    public private(set) var favoriteCourses: [FavoriteCourse] = []
 
     public var selectedCalendarId = 0
     public var selectedGrade = 0
@@ -498,14 +572,24 @@ public final class SchedulerViewModel {
     public var selectedSectionGroup = 1
 
     private let schedulerRepo: SchedulerRepository
+    private let courseRepo: CourseRepository
+    private let favoriteStore: CourseFavoriteStore
     private let logger = AppLogger(category: "Scheduler")
     private var detailsByCourseCode: [String: [SchedulerTeachingClass]] = [:]
     private var timetableLookupDetailsByCourseCode: [String: [SchedulerTeachingClass]] = [:]
+    private var reviewInfoByCourseCode: [String: SchedulerCourseReviewInfo] = [:]
     private var timetableLookupSlotId: String?
     private let selectedClassesStorageKey = "com.yourtj.course.scheduler.selectedClassesByCalendar"
 
-    public init(schedulerRepo: SchedulerRepository = .init()) {
+    public init(
+        schedulerRepo: SchedulerRepository = .init(),
+        courseRepo: CourseRepository = .init(),
+        favoriteStore: CourseFavoriteStore = .init()
+    ) {
         self.schedulerRepo = schedulerRepo
+        self.courseRepo = courseRepo
+        self.favoriteStore = favoriteStore
+        refreshFavorites()
     }
 
     public var canSearch: Bool {
@@ -520,6 +604,7 @@ public final class SchedulerViewModel {
         guard !isLoading else { return }
         isLoading = true
         error = nil
+        refreshFavorites()
         defer { isLoading = false }
 
         do {
@@ -611,6 +696,7 @@ public final class SchedulerViewModel {
             }
             searchResults = summaries
             detailsByCourseCode = details
+            hydrateReviewInfoInBackground(for: summaries)
         } catch {
             logger.error("Failed to load major courses: \(error.localizedDescription)")
             self.error = error.localizedDescription
@@ -656,6 +742,7 @@ public final class SchedulerViewModel {
                 day: day,
                 section: Self.sectionGroup(for: section)
             )
+            hydrateReviewInfoInBackground(for: timetableLookupResults)
         } catch {
             logger.error("Failed to load timetable slot courses: \(error.localizedDescription)")
             self.error = error.localizedDescription
@@ -712,6 +799,40 @@ public final class SchedulerViewModel {
 
     public func classes(for course: SchedulerCourseSummary) -> [SchedulerTeachingClass] {
         detailsByCourseCode[course.courseCode] ?? []
+    }
+
+    public func refreshFavorites() {
+        favoriteCourses = favoriteStore.load()
+        seedReviewInfoFromFavorites()
+    }
+
+    @discardableResult
+    public func importFavorite(_ favorite: FavoriteCourse) -> Bool {
+        let summary = SchedulerCourseSummary(favorite: favorite)
+        reviewInfoByCourseCode[summary.courseCode] = SchedulerCourseReviewInfo(favorite: favorite)
+        guard !searchResults.contains(where: { $0.courseCode == summary.courseCode }) else {
+            return false
+        }
+        searchResults.insert(summary, at: 0)
+        return true
+    }
+
+    @discardableResult
+    public func importAllFavorites() -> Int {
+        refreshFavorites()
+        return favoriteCourses.reduce(into: 0) { count, favorite in
+            if importFavorite(favorite) {
+                count += 1
+            }
+        }
+    }
+
+    fileprivate func reviewInfo(for course: SchedulerCourseSummary) -> SchedulerCourseReviewInfo? {
+        reviewInfoByCourseCode[course.courseCode]
+    }
+
+    fileprivate func isFavorite(course: SchedulerCourseSummary) -> Bool {
+        favoriteCourses.contains { $0.code == course.courseCode }
     }
 
     public func timetableLookupClasses(
@@ -860,6 +981,7 @@ public final class SchedulerViewModel {
                 return SchedulerScheduleEntry(
                     courseName: item.course.courseName,
                     classCode: item.teachingClass.code,
+                    campus: item.teachingClass.campus,
                     room: arrangement.occupyRoom,
                     weekText: arrangement.weekText
                 )
@@ -923,9 +1045,44 @@ public final class SchedulerViewModel {
 
         do {
             searchResults = try await operation()
+            hydrateReviewInfoInBackground(for: searchResults)
         } catch {
             logger.error("Scheduler search failed: \(error.localizedDescription)")
             self.error = error.localizedDescription
+        }
+    }
+
+    private func hydrateReviewInfoInBackground(for courses: [SchedulerCourseSummary]) {
+        guard !courses.isEmpty else { return }
+        Task { [weak self] in
+            await self?.hydrateReviewInfo(for: courses)
+        }
+    }
+
+    private func hydrateReviewInfo(for courses: [SchedulerCourseSummary]) async {
+        refreshFavorites()
+
+        let unresolvedCourses = courses
+            .filter { reviewInfoByCourseCode[$0.courseCode] == nil }
+            .prefix(60)
+
+        for course in unresolvedCourses {
+            do {
+                let detail = try await courseRepo.getCourseByCode(code: course.courseCode)
+                reviewInfoByCourseCode[course.courseCode] = SchedulerCourseReviewInfo(
+                    course: detail,
+                    isFavorite: favoriteStore.isFavorite(courseId: detail.id)
+                        || favoriteStore.isFavorite(courseCode: course.courseCode)
+                )
+            } catch {
+                logger.error("Failed to hydrate review info for \(course.courseCode): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func seedReviewInfoFromFavorites() {
+        for favorite in favoriteCourses {
+            reviewInfoByCourseCode[favorite.code] = SchedulerCourseReviewInfo(favorite: favorite)
         }
     }
 
@@ -979,12 +1136,15 @@ public final class SchedulerViewModel {
 public struct SchedulerScheduleEntry: Equatable, Sendable {
     public let courseName: String
     public let classCode: String
+    public let campus: String
     public let room: String?
     public let weekText: String
 }
 
 private struct SchedulerCourseResultRow: View {
     let course: SchedulerCourseSummary
+    let reviewInfo: SchedulerCourseReviewInfo?
+    let isFavorite: Bool
     let isExpanded: Bool
     let isLoading: Bool
     let classes: [SchedulerTeachingClass]
@@ -1001,6 +1161,10 @@ private struct SchedulerCourseResultRow: View {
                     Text([course.courseCode, course.facultyI18n, creditText].filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    SchedulerCourseMetaBadges(
+                        reviewInfo: reviewInfo,
+                        isFavorite: isFavorite
+                    )
                     if !course.courseNature.isEmpty || !course.campus.isEmpty {
                         Text((course.courseNature + course.campus).prefix(4).joined(separator: " / "))
                             .font(.caption2)
@@ -1010,15 +1174,27 @@ private struct SchedulerCourseResultRow: View {
 
                 Spacer()
 
-                Button(action: onToggle) {
-                    if isLoading {
-                        ProgressView()
-                    } else {
-                        Image(systemName: isExpanded ? "chevron.up.circle.fill" : "chevron.down.circle")
+                HStack(spacing: 12) {
+                    NavigationLink {
+                        SchedulerCourseByCodeView(courseCode: course.courseCode)
+                    } label: {
+                        Label("评课", systemImage: "text.bubble")
+                            .labelStyle(.iconOnly)
                     }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(AppColors.cyan)
+                    .accessibilityLabel("查看 \(course.courseName) 评课")
+
+                    Button(action: onToggle) {
+                        if isLoading {
+                            ProgressView()
+                        } else {
+                            Image(systemName: isExpanded ? "chevron.up.circle.fill" : "chevron.down.circle")
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(isExpanded ? "收起教学班" : "展开教学班")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isExpanded ? "收起教学班" : "展开教学班")
             }
 
             if isExpanded {
@@ -1037,6 +1213,7 @@ private struct SchedulerCourseResultRow: View {
                     VStack(spacing: 8) {
                         ForEach(classes) { teachingClass in
                             TeachingClassRow(
+                                course: course,
                                 teachingClass: teachingClass,
                                 selectionState: selectionState(teachingClass)
                             ) {
@@ -1055,7 +1232,36 @@ private struct SchedulerCourseResultRow: View {
     }
 }
 
+private struct SchedulerCourseMetaBadges: View {
+    let reviewInfo: SchedulerCourseReviewInfo?
+    let isFavorite: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if isFavorite {
+                Label("已收藏", systemImage: "star.fill")
+                    .foregroundStyle(.yellow)
+            }
+
+            Label(reviewInfo?.ratingText ?? "评课未关联", systemImage: "chart.bar.fill")
+                .foregroundStyle(ratingColor)
+        }
+        .font(.caption2.weight(.medium))
+        .labelStyle(.titleAndIcon)
+    }
+
+    private var ratingColor: Color {
+        guard let reviewInfo, reviewInfo.reviewCount > 0 else { return .secondary }
+        switch reviewInfo.rating {
+        case 4.0...: return AppColors.positive
+        case 3.0..<4.0: return .orange
+        default: return AppColors.negative
+        }
+    }
+}
+
 private struct TeachingClassRow: View {
+    let course: SchedulerCourseSummary
     let teachingClass: SchedulerTeachingClass
     let selectionState: TeachingClassSelectionState
     let onAdd: () -> Void
@@ -1071,11 +1277,28 @@ private struct TeachingClassRow: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button(action: onAdd) {
-                    AppActionButtonLabel(actionTitle, systemImage: actionIcon)
+
+                VStack(alignment: .trailing, spacing: 8) {
+                    NavigationLink {
+                        SchedulerCourseByCodeView(
+                            courseCode: course.courseCode,
+                            teacherName: teachingClass.primaryTeacher?.teacherName,
+                            teacherCode: teachingClass.primaryTeacher?.teacherCode
+                        )
+                    } label: {
+                        Label("评课", systemImage: "text.bubble")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(AppColors.cyan)
+                    .accessibilityLabel("查看 \(course.courseName) \(teachingClass.teacherNames) 评课")
+
+                    Button(action: onAdd) {
+                        AppActionButtonLabel(actionTitle, systemImage: actionIcon)
+                    }
+                    .buttonStyle(AppActionButtonStyle(role: actionRole, size: .compact, fillsWidth: false))
+                    .disabled(selectionState != .none)
                 }
-                .buttonStyle(AppActionButtonStyle(role: actionRole, size: .compact, fillsWidth: false))
-                .disabled(selectionState != .none)
             }
 
             if !teachingClass.campus.isEmpty || !teachingClass.teachingLanguage.isEmpty {
@@ -1092,6 +1315,13 @@ private struct TeachingClassRow: View {
                 )
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            }
+
+            if let firstNote = teachingClass.detailNotes.first {
+                Label(firstNote, systemImage: "note.text")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
         }
         .padding(10)
@@ -1269,6 +1499,8 @@ private struct SchedulerSlotSheet: View {
                 ForEach(viewModel.timetableLookupResults) { course in
                     SchedulerCourseResultRow(
                         course: course,
+                        reviewInfo: viewModel.reviewInfo(for: course),
+                        isFavorite: viewModel.isFavorite(course: course),
                         isExpanded: viewModel.timetableLookupExpandedCourseCode == course.courseCode,
                         isLoading: viewModel.loadingTimetableLookupDetailsCourseCode == course.courseCode,
                         classes: viewModel.timetableLookupClasses(
@@ -1304,6 +1536,171 @@ private struct SchedulerSlotSheet: View {
     }
 }
 
+private enum SchedulerCourseByCodePhase: Equatable {
+    case loading
+    case loaded(Int)
+    case failed(String)
+}
+
+private struct SchedulerCourseByCodeView: View {
+    let courseCode: String
+    let teacherName: String?
+    let teacherCode: String?
+
+    @State private var phase: SchedulerCourseByCodePhase = .loading
+    private let repository = CourseRepository()
+
+    init(
+        courseCode: String,
+        teacherName: String? = nil,
+        teacherCode: String? = nil
+    ) {
+        self.courseCode = courseCode
+        self.teacherName = teacherName?.trimmed.nilIfEmpty
+        self.teacherCode = teacherCode?.trimmed.nilIfEmpty
+    }
+
+    var body: some View {
+        Group {
+            switch phase {
+            case .loading:
+                LoadingView(message: "正在查找评课...")
+            case .loaded(let courseId):
+                CourseDetailView(courseId: courseId)
+            case .failed(let message):
+                ErrorStateView(message: message) {
+                    Task { await load() }
+                }
+            }
+        }
+        .navigationTitle("评课")
+        .navigationBarTitleDisplayMode(.inline)
+        .task(id: lookupKey) {
+            await load()
+        }
+    }
+
+    private var lookupKey: String {
+        [courseCode, teacherName ?? "", teacherCode ?? ""].joined(separator: "|")
+    }
+
+    @MainActor
+    private func load() async {
+        phase = .loading
+        do {
+            let detail = try await repository.getCourseByCode(
+                code: courseCode,
+                teacherName: teacherName,
+                teacherCode: teacherCode
+            )
+            phase = .loaded(detail.id)
+        } catch {
+            phase = .failed("没有找到这门课的评课数据，或网络请求失败。")
+        }
+    }
+}
+
+private struct SchedulerFavoriteImportSheet: View {
+    let viewModel: SchedulerViewModel
+    let onDismiss: () -> Void
+    @State private var message: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if viewModel.favoriteCourses.isEmpty {
+                    ContentUnavailableView(
+                        "暂无收藏课程",
+                        systemImage: "star",
+                        description: Text("在评课详情页点击收藏后，可将课程导入排课候选。")
+                    )
+                } else {
+                    Section {
+                        Button {
+                            let importedCount = viewModel.importAllFavorites()
+                            message = importedCount == 0 ? "收藏课程已全部在候选中" : "已导入 \(importedCount) 门收藏课程"
+                        } label: {
+                            Label("导入全部收藏", systemImage: "square.and.arrow.down")
+                        }
+
+                        if let message {
+                            Text(message)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Section("收藏课程") {
+                        ForEach(viewModel.favoriteCourses) { favorite in
+                            SchedulerFavoriteImportRow(
+                                favorite: favorite,
+                                isImported: viewModel.searchResults.contains { $0.courseCode == favorite.code },
+                                onImport: {
+                                    if viewModel.importFavorite(favorite) {
+                                        message = "已导入 \(favorite.name)"
+                                    } else {
+                                        message = "\(favorite.name) 已在候选中"
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+            .navigationTitle("导入收藏")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("完成", action: onDismiss)
+                }
+            }
+            .onAppear {
+                viewModel.refreshFavorites()
+            }
+        }
+    }
+}
+
+private struct SchedulerFavoriteImportRow: View {
+    let favorite: FavoriteCourse
+    let isImported: Bool
+    let onImport: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(favorite.name)
+                    .font(.subheadline.weight(.semibold))
+                Text([favorite.code, favorite.teacherName, favorite.department].filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Label(ratingText, systemImage: "chart.bar.fill")
+                    if favorite.credit > 0 {
+                        Label("\(favorite.credit.cleanText) 学分", systemImage: "number")
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button(action: onImport) {
+                AppActionButtonLabel(isImported ? "已导入" : "导入", systemImage: isImported ? "checkmark.circle.fill" : "plus.circle")
+            }
+            .buttonStyle(AppActionButtonStyle(role: isImported ? .primary : .secondary, size: .compact, fillsWidth: false))
+            .disabled(isImported)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var ratingText: String {
+        guard favorite.reviewCount > 0 else { return "暂无评课" }
+        return "\(String(format: "%.1f", favorite.rating)) · \(favorite.reviewCount) 评"
+    }
+}
+
 private struct SchedulerSelectedClassSummaryRow: View {
     let item: SchedulerSelectedClass
 
@@ -1320,8 +1717,79 @@ private struct SchedulerSelectedClassSummaryRow: View {
             Text(item.teachingClass.scheduleSummary)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            SchedulerTeachingClassDetailBlock(teachingClass: item.teachingClass)
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct SchedulerTeachingClassDetailBlock: View {
+    let teachingClass: SchedulerTeachingClass
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !teachingClass.campus.isEmpty || !teachingClass.teachingLanguage.isEmpty || teachingClass.isExclusive {
+                HStack(spacing: 8) {
+                    if !teachingClass.campus.isEmpty {
+                        Label(teachingClass.campus, systemImage: "mappin.and.ellipse")
+                    }
+                    if !teachingClass.teachingLanguage.isEmpty {
+                        Label(teachingClass.teachingLanguage, systemImage: "globe.asia.australia")
+                    }
+                    if teachingClass.isExclusive {
+                        Label("专属", systemImage: "lock")
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+
+            if let remark = teachingClass.remark {
+                Label(remark, systemImage: "note.text")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if teachingClass.arrangementInfo.isEmpty {
+                Label("时间地点未定", systemImage: "calendar.badge.questionmark")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(teachingClass.arrangementInfo) { arrangement in
+                    SchedulerArrangementDetailRow(arrangement: arrangement)
+                }
+            }
+        }
+    }
+}
+
+private struct SchedulerArrangementDetailRow: View {
+    let arrangement: SchedulerArrangement
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label(summaryText, systemImage: "calendar")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            ForEach(arrangement.detailLines, id: \.self) { line in
+                Text(line)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var summaryText: String {
+        [
+            Optional(arrangement.dayName),
+            Optional(arrangement.timeText),
+            Optional(arrangement.weekText),
+            arrangement.occupyRoom
+        ]
+        .compactMap { $0?.trimmed.nilIfEmpty }
+        .joined(separator: " · ")
     }
 }
 
@@ -1348,16 +1816,29 @@ private struct SchedulerSlotCandidateRow: View {
 
                 Spacer()
 
-                Button(action: onSelect) {
-                    AppActionButtonLabel(displayActionTitle, systemImage: displayActionIcon)
+                VStack(alignment: .trailing, spacing: 8) {
+                    NavigationLink {
+                        SchedulerCourseByCodeView(
+                            courseCode: candidate.course.courseCode,
+                            teacherName: candidate.teachingClass.primaryTeacher?.teacherName,
+                            teacherCode: candidate.teachingClass.primaryTeacher?.teacherCode
+                        )
+                    } label: {
+                        Label("评课", systemImage: "text.bubble")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(AppColors.cyan)
+
+                    Button(action: onSelect) {
+                        AppActionButtonLabel(displayActionTitle, systemImage: displayActionIcon)
+                    }
+                    .buttonStyle(AppActionButtonStyle(role: actionRole, size: .compact, fillsWidth: false))
+                    .disabled(selectionState != .none)
                 }
-                .buttonStyle(AppActionButtonStyle(role: actionRole, size: .compact, fillsWidth: false))
-                .disabled(selectionState != .none)
             }
 
-            Text(candidate.teachingClass.scheduleSummary)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            SchedulerTeachingClassDetailBlock(teachingClass: candidate.teachingClass)
         }
         .padding(.vertical, 4)
     }
@@ -1405,6 +1886,11 @@ private struct TimetableCell: View {
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                    } else if !entry.campus.isEmpty {
+                        Text(entry.campus)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -1422,6 +1908,10 @@ private struct TimetableCell: View {
 }
 
 private extension SchedulerTeachingClass {
+    var primaryTeacher: SchedulerTeacher? {
+        teachers.first { !$0.teacherName.trimmed.isEmpty || !$0.teacherCode.trimmed.isEmpty }
+    }
+
     func occupies(day: Int, section: Int) -> Bool {
         arrangementInfo.contains { arrangement in
             arrangement.occupyDay == day && arrangement.occupyTime?.contains(section) == true
@@ -1429,9 +1919,27 @@ private extension SchedulerTeachingClass {
     }
 }
 
+private extension SchedulerCourseSummary {
+    init(favorite: FavoriteCourse) {
+        self.init(
+            courseCode: favorite.code,
+            courseName: favorite.name,
+            faculty: favorite.department,
+            facultyI18n: favorite.department,
+            courseNature: [],
+            campus: [],
+            credit: favorite.credit
+        )
+    }
+}
+
 private extension String {
     var trimmed: String {
         trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }
 
