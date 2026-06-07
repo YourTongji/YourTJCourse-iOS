@@ -26,6 +26,12 @@ private enum SchedulerPage: String, CaseIterable, Identifiable {
     }
 }
 
+private enum TeachingClassSelectionState {
+    case none
+    case selected
+    case sameCourseSelected
+}
+
 public struct SchedulerView: View {
     @State private var viewModel = SchedulerViewModel()
     @State private var selectedPage: SchedulerPage = .filters
@@ -355,6 +361,9 @@ public struct SchedulerView: View {
                         isExpanded: viewModel.expandedCourseCode == course.courseCode,
                         isLoading: viewModel.loadingDetailsCourseCode == course.courseCode,
                         classes: viewModel.classes(for: course),
+                        selectionState: { teachingClass in
+                            viewModel.selectionState(course: course, teachingClass: teachingClass)
+                        },
                         onToggle: {
                             Task { await viewModel.toggleDetails(for: course) }
                         },
@@ -564,6 +573,20 @@ public final class SchedulerViewModel {
         detailsByCourseCode[course.courseCode] ?? []
     }
 
+    fileprivate func selectionState(
+        course: SchedulerCourseSummary,
+        teachingClass: SchedulerTeachingClass
+    ) -> TeachingClassSelectionState {
+        let selectedClassId = SchedulerSelectedClass(course: course, teachingClass: teachingClass).id
+        if selectedClasses.contains(where: { $0.id == selectedClassId }) {
+            return .selected
+        }
+        if selectedClasses.contains(where: { $0.course.courseCode == course.courseCode }) {
+            return .sameCourseSelected
+        }
+        return .none
+    }
+
     public func add(course: SchedulerCourseSummary, teachingClass: SchedulerTeachingClass) {
         let candidate = SchedulerSelectedClass(course: course, teachingClass: teachingClass)
         if selectedClasses.contains(where: { $0.id == candidate.id }) {
@@ -712,6 +735,7 @@ private struct SchedulerCourseResultRow: View {
     let isExpanded: Bool
     let isLoading: Bool
     let classes: [SchedulerTeachingClass]
+    let selectionState: (SchedulerTeachingClass) -> TeachingClassSelectionState
     let onToggle: () -> Void
     let onAdd: (SchedulerTeachingClass) -> Void
 
@@ -759,7 +783,10 @@ private struct SchedulerCourseResultRow: View {
                 } else {
                     VStack(spacing: 8) {
                         ForEach(classes) { teachingClass in
-                            TeachingClassRow(teachingClass: teachingClass) {
+                            TeachingClassRow(
+                                teachingClass: teachingClass,
+                                selectionState: selectionState(teachingClass)
+                            ) {
                                 onAdd(teachingClass)
                             }
                         }
@@ -777,6 +804,7 @@ private struct SchedulerCourseResultRow: View {
 
 private struct TeachingClassRow: View {
     let teachingClass: SchedulerTeachingClass
+    let selectionState: TeachingClassSelectionState
     let onAdd: () -> Void
 
     var body: some View {
@@ -791,9 +819,10 @@ private struct TeachingClassRow: View {
                 }
                 Spacer()
                 Button(action: onAdd) {
-                    AppActionButtonLabel("加课", systemImage: "plus.circle")
+                    AppActionButtonLabel(actionTitle, systemImage: actionIcon)
                 }
-                .buttonStyle(AppActionButtonStyle(role: .secondary, size: .compact, fillsWidth: false))
+                .buttonStyle(AppActionButtonStyle(role: actionRole, size: .compact, fillsWidth: false))
+                .disabled(selectionState != .none)
             }
 
             if !teachingClass.campus.isEmpty || !teachingClass.teachingLanguage.isEmpty {
@@ -813,12 +842,50 @@ private struct TeachingClassRow: View {
             }
         }
         .padding(10)
-        .background(AppColors.cyan.opacity(0.08))
+        .background(rowBackground)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(AppColors.cyan.opacity(0.16), lineWidth: 1)
+                .stroke(rowBorder, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var actionTitle: String {
+        switch selectionState {
+        case .none: "加课"
+        case .selected: "已选"
+        case .sameCourseSelected: "已选其他班"
+        }
+    }
+
+    private var actionIcon: String {
+        switch selectionState {
+        case .none: "plus.circle"
+        case .selected, .sameCourseSelected: "checkmark.circle.fill"
+        }
+    }
+
+    private var actionRole: AppActionButtonStyle.Role {
+        switch selectionState {
+        case .none, .sameCourseSelected: .secondary
+        case .selected: .primary
+        }
+    }
+
+    private var rowBackground: Color {
+        switch selectionState {
+        case .none: AppColors.cyan.opacity(0.08)
+        case .selected: AppColors.cyan.opacity(0.16)
+        case .sameCourseSelected: Color.secondary.opacity(0.08)
+        }
+    }
+
+    private var rowBorder: Color {
+        switch selectionState {
+        case .none: AppColors.cyan.opacity(0.16)
+        case .selected: AppColors.cyan.opacity(0.32)
+        case .sameCourseSelected: Color.secondary.opacity(0.18)
+        }
     }
 }
 
