@@ -40,6 +40,43 @@ import Testing
     #expect(decoded == [selected])
 }
 
+@Test func decodesSchedulerClassNotesAndArrangementDetails() throws {
+    let json = """
+    {
+      "code": "1001",
+      "campus": "四平路校区",
+      "teachingLanguage": "中文",
+      "remark": "限体育专项学生",
+      "isExclusive": true,
+      "status": 1,
+      "teachers": [
+        { "teacherCode": "T1", "teacherName": "张老师" }
+      ],
+      "arrangementInfo": [
+        {
+          "arrangementText": "星期一1-2节 [1-16周] 体育场",
+          "occupyDay": 1,
+          "occupyTime": [1, 2],
+          "occupyWeek": [1, 2],
+          "occupyRoom": "体育场",
+          "teacherAndCode": "张老师 1001",
+          "note": "自备运动装备"
+        }
+      ]
+    }
+    """
+
+    let teachingClass = try JSONDecoder().decode(SchedulerTeachingClass.self, from: Data(json.utf8))
+
+    #expect(teachingClass.isExclusive)
+    #expect(teachingClass.status == 1)
+    #expect(teachingClass.remark == "限体育专项学生")
+    #expect(teachingClass.arrangementInfo.first?.remark == "自备运动装备")
+    #expect(teachingClass.detailNotes.contains("限体育专项学生"))
+    #expect(teachingClass.detailNotes.contains("自备运动装备"))
+    #expect(teachingClass.detailNotes.contains("星期一1-2节 [1-16周] 体育场"))
+}
+
 private func teachingClass(day: Int, sections: [Int], weeks: [Int]?) -> SchedulerTeachingClass {
     SchedulerTeachingClass(
         code: "\(day)-\(sections.map(String.init).joined())-\(weeks?.count ?? 0)",

@@ -207,6 +207,7 @@ public struct SchedulerArrangement: Codable, Identifiable, Hashable, Sendable {
     public let occupyWeek: [Int]?
     public let occupyRoom: String?
     public let teacherAndCode: String?
+    public let remark: String?
 
     public var id: String { arrangementText }
 
@@ -216,7 +217,8 @@ public struct SchedulerArrangement: Codable, Identifiable, Hashable, Sendable {
         occupyTime: [Int]?,
         occupyWeek: [Int]?,
         occupyRoom: String?,
-        teacherAndCode: String?
+        teacherAndCode: String?,
+        remark: String? = nil
     ) {
         self.arrangementText = arrangementText
         self.occupyDay = occupyDay
@@ -224,6 +226,7 @@ public struct SchedulerArrangement: Codable, Identifiable, Hashable, Sendable {
         self.occupyWeek = occupyWeek
         self.occupyRoom = occupyRoom
         self.teacherAndCode = teacherAndCode
+        self.remark = remark?.nonEmptyTrimmed
     }
 
     public var dayName: String {
@@ -243,6 +246,13 @@ public struct SchedulerArrangement: Codable, Identifiable, Hashable, Sendable {
         return first == last ? "第 \(first) 周" : "第 \(first)-\(last) 周"
     }
 
+    public var detailLines: [String] {
+        [
+            arrangementText.nonEmptyTrimmed,
+            remark?.nonEmptyTrimmed
+        ].compactMap { $0 }.uniquePreservingOrder()
+    }
+
     public func conflicts(with other: SchedulerArrangement) -> Bool {
         guard occupyDay == other.occupyDay, occupyDay != nil else { return false }
         guard Self.overlaps(occupyTime, other.occupyTime) else { return false }
@@ -255,6 +265,58 @@ public struct SchedulerArrangement: Codable, Identifiable, Hashable, Sendable {
         }
         return !Set(lhs).isDisjoint(with: Set(rhs))
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case arrangementText
+        case occupyDay
+        case occupyTime
+        case occupyWeek
+        case occupyRoom
+        case teacherAndCode
+        case remark
+        case remarks
+        case note
+        case notes
+        case memo
+        case description
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        arrangementText = try container.decodeIfPresent(String.self, forKey: .arrangementText) ?? ""
+        occupyDay = try container.decodeIfPresent(Int.self, forKey: .occupyDay)
+        occupyTime = try container.decodeIfPresent([Int].self, forKey: .occupyTime)
+        occupyWeek = try container.decodeIfPresent([Int].self, forKey: .occupyWeek)
+        occupyRoom = try container.decodeIfPresent(String.self, forKey: .occupyRoom)?.nonEmptyTrimmed
+        teacherAndCode = try container.decodeIfPresent(String.self, forKey: .teacherAndCode)?.nonEmptyTrimmed
+        remark = try Self.decodeFirstString(
+            from: container,
+            keys: [.remark, .remarks, .note, .notes, .memo, .description]
+        )
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(arrangementText, forKey: .arrangementText)
+        try container.encodeIfPresent(occupyDay, forKey: .occupyDay)
+        try container.encodeIfPresent(occupyTime, forKey: .occupyTime)
+        try container.encodeIfPresent(occupyWeek, forKey: .occupyWeek)
+        try container.encodeIfPresent(occupyRoom, forKey: .occupyRoom)
+        try container.encodeIfPresent(teacherAndCode, forKey: .teacherAndCode)
+        try container.encodeIfPresent(remark, forKey: .remark)
+    }
+
+    private static func decodeFirstString(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        keys: [CodingKeys]
+    ) throws -> String? {
+        for key in keys {
+            if let value = try container.decodeIfPresent(String.self, forKey: key)?.nonEmptyTrimmed {
+                return value
+            }
+        }
+        return nil
+    }
 }
 
 public struct SchedulerTeachingClass: Codable, Identifiable, Hashable, Sendable {
@@ -263,6 +325,9 @@ public struct SchedulerTeachingClass: Codable, Identifiable, Hashable, Sendable 
     public let campus: String
     public let teachingLanguage: String
     public let arrangementInfo: [SchedulerArrangement]
+    public let isExclusive: Bool
+    public let status: Int?
+    public let remark: String?
 
     public var id: String { code }
 
@@ -271,13 +336,19 @@ public struct SchedulerTeachingClass: Codable, Identifiable, Hashable, Sendable 
         teachers: [SchedulerTeacher],
         campus: String,
         teachingLanguage: String,
-        arrangementInfo: [SchedulerArrangement]
+        arrangementInfo: [SchedulerArrangement],
+        isExclusive: Bool = false,
+        status: Int? = nil,
+        remark: String? = nil
     ) {
         self.code = code
         self.teachers = teachers
         self.campus = campus
         self.teachingLanguage = teachingLanguage
         self.arrangementInfo = arrangementInfo
+        self.isExclusive = isExclusive
+        self.status = status
+        self.remark = remark?.nonEmptyTrimmed
     }
 
     public var teacherNames: String {
@@ -290,12 +361,72 @@ public struct SchedulerTeachingClass: Codable, Identifiable, Hashable, Sendable 
         return parts.isEmpty ? "时间未定" : parts.joined(separator: "；")
     }
 
+    public var detailNotes: [String] {
+        ([remark?.nonEmptyTrimmed].compactMap { $0 } + arrangementInfo.flatMap(\.detailLines))
+            .uniquePreservingOrder()
+    }
+
     public func conflicts(with other: SchedulerTeachingClass) -> Bool {
         arrangementInfo.contains { left in
             other.arrangementInfo.contains { right in
                 left.conflicts(with: right)
             }
         }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case teachers
+        case campus
+        case teachingLanguage
+        case arrangementInfo
+        case isExclusive
+        case status
+        case remark
+        case remarks
+        case note
+        case notes
+        case memo
+        case description
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decodeIfPresent(String.self, forKey: .code) ?? ""
+        teachers = try container.decodeIfPresent([SchedulerTeacher].self, forKey: .teachers) ?? []
+        campus = try container.decodeIfPresent(String.self, forKey: .campus) ?? ""
+        teachingLanguage = try container.decodeIfPresent(String.self, forKey: .teachingLanguage) ?? ""
+        arrangementInfo = try container.decodeIfPresent([SchedulerArrangement].self, forKey: .arrangementInfo) ?? []
+        isExclusive = try container.decodeBoolOrIntIfPresent(forKey: .isExclusive) ?? false
+        status = try container.decodeIfPresent(Int.self, forKey: .status)
+        remark = try Self.decodeFirstString(
+            from: container,
+            keys: [.remark, .remarks, .note, .notes, .memo, .description]
+        )
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(code, forKey: .code)
+        try container.encode(teachers, forKey: .teachers)
+        try container.encode(campus, forKey: .campus)
+        try container.encode(teachingLanguage, forKey: .teachingLanguage)
+        try container.encode(arrangementInfo, forKey: .arrangementInfo)
+        try container.encode(isExclusive, forKey: .isExclusive)
+        try container.encodeIfPresent(status, forKey: .status)
+        try container.encodeIfPresent(remark, forKey: .remark)
+    }
+
+    private static func decodeFirstString(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        keys: [CodingKeys]
+    ) throws -> String? {
+        for key in keys {
+            if let value = try container.decodeIfPresent(String.self, forKey: key)?.nonEmptyTrimmed {
+                return value
+            }
+        }
+        return nil
     }
 }
 
@@ -346,5 +477,23 @@ fileprivate extension SchedulerCourseSummary {
 private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+private extension Sequence where Element: Hashable {
+    func uniquePreservingOrder() -> [Element] {
+        var seen = Set<Element>()
+        var result: [Element] = []
+        for element in self where seen.insert(element).inserted {
+            result.append(element)
+        }
+        return result
+    }
+}
+
+private extension String {
+    var nonEmptyTrimmed: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 }
