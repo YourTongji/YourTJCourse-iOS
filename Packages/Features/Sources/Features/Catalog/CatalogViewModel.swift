@@ -48,7 +48,7 @@ public final class CatalogViewModel {
         error = nil
         currentPage = 1
         courses = []
-        await fetchPage(page: 1)
+        _ = await fetchPage(page: 1)
         isLoading = false
     }
 
@@ -60,8 +60,10 @@ public final class CatalogViewModel {
     public func loadMore() async {
         guard hasMore, !isLoadingMore else { return }
         isLoadingMore = true
-        currentPage += 1
-        await fetchPage(page: currentPage, append: true)
+        let nextPage = currentPage + 1
+        if await fetchPage(page: nextPage, append: true) {
+            currentPage = nextPage
+        }
         isLoadingMore = false
     }
 
@@ -97,7 +99,7 @@ public final class CatalogViewModel {
         await loadInitial()
     }
 
-    private func fetchPage(page: Int, append: Bool = false) async {
+    private func fetchPage(page: Int, append: Bool = false) async -> Bool {
         do {
             let response: PaginatedResponse<Course> = try await repository.getCourses(
                 query: searchText.isEmpty ? nil : searchText,
@@ -119,9 +121,11 @@ public final class CatalogViewModel {
             }
             hasMore = response.hasMore
             totalCount = response.total
+            return true
         } catch {
             logger.error("Failed to load courses: \(error.localizedDescription)")
             self.error = error.localizedDescription
+            return false
         }
     }
 }
