@@ -31,7 +31,12 @@
 
 **YourTJ Course** 是同济大学选课社区的官方 iOS 客户端。它以 SwiftUI 原生实现，采用 Liquid Glass 设计语言，直接调用 Cloudflare Workers 后端 API，提供课程浏览、评价分享、积分钱包等功能。
 
-> 后端仓库：[YourTJCourse-Serverless](https://github.com/YourTongji/YourTJCourse-Serverless)
+> **YourTJ 产品矩阵** ·
+> [Serverless（后端 API）](https://github.com/YourTongji/YourTJCourse-Serverless) ·
+> [Flutter（跨端版）](https://github.com/YourTongji/YourTJCourse-Flutter) ·
+> [Credit（积分服务）](https://github.com/YourTongji/YourTJ-Credit-Serverless) ·
+> [Captcha（验证服务）](https://github.com/YourTongji/YourTJCaptcha) ·
+> [HomePage（官网）](https://github.com/YourTongji/YourTJ-HomePage)
 
 ## Features
 
