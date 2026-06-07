@@ -17,6 +17,14 @@ public enum AppAppearancePreference: String, CaseIterable, Identifiable, Sendabl
         }
     }
 
+    public var iconName: String {
+        switch self {
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max"
+        case .dark: "moon.stars"
+        }
+    }
+
     public var colorScheme: ColorScheme? {
         switch self {
         case .system: nil
