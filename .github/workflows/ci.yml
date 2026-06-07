@@ -18,7 +18,7 @@ jobs:
     name: SwiftLint
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: SwiftLint
         run: swiftlint --strict 2>&1 || true
 
@@ -26,9 +26,7 @@ jobs:
     name: SPM Tests
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: xcodebuild -version
+      - uses: actions/checkout@v5
       - name: Run DomainKit tests
         run: swift test --package-path Packages/DomainKit 2>&1
       - name: Run DataKit tests
@@ -39,9 +37,9 @@ jobs:
     runs-on: macos-15
     needs: [lint, spm-test]
     steps:
-      - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: xcodebuild -version
+      - uses: actions/checkout@v5
+      - name: List available simulators
+        run: xcrun simctl list devices available 2>&1 | grep -i iphone | tail -5
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate Xcode project
@@ -50,7 +48,7 @@ jobs:
         run: |
           xcodebuild build \
             -scheme YourTJCourse \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            -destination generic/platform=iOS \
             -configuration Debug \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
