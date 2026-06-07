@@ -105,9 +105,9 @@ public struct CourseDetailView: View {
                 HStack {
                     Spacer()
                     Button(action: { showReviewSheet = true }) {
-                        Label("写评价", systemImage: "square.and.pencil")
+                        AppActionButtonLabel("写评价", systemImage: "square.and.pencil")
                     }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(AppActionButtonStyle(role: .primary, fillsWidth: false))
                     .padding(.horizontal)
                 }
 
@@ -307,10 +307,9 @@ public struct CourseDetailView: View {
                 Button {
                     Task { await viewModel.generateAiSummary() }
                 } label: {
-                    Label(buttonTitle, systemImage: systemImage)
-                        .font(.caption.bold())
+                    AppActionButtonLabel(buttonTitle, systemImage: systemImage)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(AppActionButtonStyle(role: .secondary, size: .compact, fillsWidth: false))
                 .disabled(viewModel.isSummaryLoading)
             }
         }
@@ -556,10 +555,7 @@ struct ReviewCard: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.04), radius: 4, y: 1)
+        .cardStyle()
         .padding(.horizontal)
     }
 }

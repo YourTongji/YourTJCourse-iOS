@@ -99,21 +99,15 @@ public struct ReviewView: View {
 
                 Section {
                     Button(action: { showCaptcha = true }) {
-                        HStack {
-                            Spacer()
-                            if viewModel.isSubmitting {
-                                ProgressView()
-                                    .tint(.white)
-                            } else {
-                                Text(viewModel.mode == .create ? "提交评价" : "保存修改")
-                                    .bold()
-                            }
-                            Spacer()
-                        }
+                        AppActionButtonLabel(
+                            viewModel.mode == .create ? "提交评价" : "保存修改",
+                            systemImage: "paperplane",
+                            isLoading: viewModel.isSubmitting
+                        )
                     }
                     .disabled(!viewModel.isValid || viewModel.isSubmitting)
-                    .buttonStyle(.glassProminent)
-                    .listRowInsets(EdgeInsets())
+                    .buttonStyle(.appPrimaryAction)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 }
             }
             .navigationTitle(viewModel.mode == .create ? "写评价" : "编辑评价")

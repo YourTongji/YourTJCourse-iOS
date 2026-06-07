@@ -153,14 +153,13 @@ public struct SchedulerView: View {
                     }
                 }
             } label: {
-                schedulerButtonLabel(
+                AppActionButtonLabel(
                     viewModel.isSearching ? "搜索中..." : "搜索课程",
-                    systemImage: "magnifyingglass"
+                    systemImage: "magnifyingglass",
+                    isLoading: viewModel.isSearching
                 )
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.cyan)
-            .controlSize(.large)
+            .buttonStyle(.appPrimaryAction)
             .disabled(viewModel.isSearching || !viewModel.canSearch)
         } header: {
             HStack {
@@ -209,14 +208,13 @@ public struct SchedulerView: View {
                     }
                 }
             } label: {
-                schedulerButtonLabel(
+                AppActionButtonLabel(
                     viewModel.isLoadingMajorCourses ? "加载中..." : "加载专业课表",
-                    systemImage: "list.bullet.rectangle"
+                    systemImage: "list.bullet.rectangle",
+                    isLoading: viewModel.isLoadingMajorCourses
                 )
             }
-            .buttonStyle(.bordered)
-            .tint(.cyan)
-            .controlSize(.large)
+            .buttonStyle(.appSecondaryAction)
             .disabled(viewModel.isLoadingMajorCourses || viewModel.selectedCalendarId == 0 || viewModel.selectedGrade == 0 || viewModel.selectedMajorCode.isEmpty)
         } header: {
             Text("专业课表")
@@ -247,11 +245,9 @@ public struct SchedulerView: View {
                     }
                 }
             } label: {
-                schedulerButtonLabel("按时间找可选课", systemImage: "clock")
+                AppActionButtonLabel("按时间找可选课", systemImage: "clock")
             }
-            .buttonStyle(.bordered)
-            .tint(.cyan)
-            .controlSize(.large)
+            .buttonStyle(.appSecondaryAction)
             .disabled(viewModel.isSearching || viewModel.selectedCalendarId == 0)
         } header: {
             Text("空段找课")
@@ -384,16 +380,6 @@ public struct SchedulerView: View {
     private static let dayNames = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
     private static let sectionGroupNames = ["", "1-2 节", "3-4 节", "5-6 节", "7-8 节", "第 9 节", "10-12 节"]
 
-    private func schedulerButtonLabel(_ title: String, systemImage: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: systemImage)
-            Text(title)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-        }
-        .font(.headline)
-        .frame(maxWidth: .infinity, minHeight: 44)
-    }
 }
 
 @MainActor
@@ -805,16 +791,9 @@ private struct TeachingClassRow: View {
                 }
                 Spacer()
                 Button(action: onAdd) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus.circle")
-                        Text("加课")
-                            .lineLimit(1)
-                    }
+                    AppActionButtonLabel("加课", systemImage: "plus.circle")
                 }
-                .font(.caption)
-                .buttonStyle(.bordered)
-                .tint(.cyan)
-                .controlSize(.small)
+                .buttonStyle(AppActionButtonStyle(role: .secondary, size: .compact, fillsWidth: false))
             }
 
             if !teachingClass.campus.isEmpty || !teachingClass.teachingLanguage.isEmpty {
@@ -834,7 +813,11 @@ private struct TeachingClassRow: View {
             }
         }
         .padding(10)
-        .background(AppColors.cyanLight.opacity(0.45))
+        .background(AppColors.cyan.opacity(0.08))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppColors.cyan.opacity(0.16), lineWidth: 1)
+        )
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }

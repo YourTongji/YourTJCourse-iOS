@@ -55,14 +55,15 @@ struct FilterSheetView: View {
                 }
 
                 Section {
-                    Button("应用筛选", action: applyFilters)
-                    .frame(maxWidth: .infinity)
-                    .buttonStyle(.glassProminent)
+                    Button(action: applyFilters) {
+                        AppActionButtonLabel("应用筛选", systemImage: "line.3.horizontal.decrease.circle")
+                    }
+                    .buttonStyle(.appPrimaryAction)
 
                     Button("重置") {
                         viewModel.resetFilters()
                     }
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.appSecondaryAction)
                 }
             }
             .navigationTitle("筛选")

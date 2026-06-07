@@ -90,8 +90,13 @@ public struct WalletView: View {
                 Button {
                     Task { await viewModel.loginOrRegisterWallet() }
                 } label: {
-                    Label(viewModel.isProcessing ? "处理中..." : "登录 / 注册钱包", systemImage: "sparkles")
+                    AppActionButtonLabel(
+                        viewModel.isProcessing ? "处理中..." : "登录 / 注册钱包",
+                        systemImage: "sparkles",
+                        isLoading: viewModel.isProcessing
+                    )
                 }
+                .buttonStyle(.appPrimaryAction)
                 .disabled(viewModel.isProcessing || viewModel.studentId.isEmpty || viewModel.pin.isEmpty)
             } header: {
                 Text("登录 / 注册")
@@ -153,14 +158,9 @@ public struct WalletView: View {
                     .padding(.horizontal)
                 } else {
                     Button(action: { viewModel.revealMnemonic() }) {
-                        HStack {
-                            Image(systemName: "eye")
-                            Text("显示助记词")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
+                        AppActionButtonLabel("显示助记词", systemImage: "eye")
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.appSecondaryAction)
                     .padding(.horizontal, 40)
                 }
 
@@ -168,16 +168,12 @@ public struct WalletView: View {
                     Button {
                         Task { await viewModel.confirmBackedUp() }
                     } label: {
-                        HStack {
-                            if viewModel.isProcessing {
-                                ProgressView()
-                            }
-                            Text(viewModel.isProcessing ? "正在启用..." : "我已安全备份并启用")
-                        }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                        AppActionButtonLabel(
+                            viewModel.isProcessing ? "正在启用..." : "我已安全备份并启用",
+                            isLoading: viewModel.isProcessing
+                        )
                     }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.appPrimaryAction)
                     .padding(.horizontal, 40)
                     .padding(.top, 20)
                     .disabled(viewModel.isProcessing)
@@ -214,16 +210,13 @@ public struct WalletView: View {
             Button(action: {
                 Task { await viewModel.restoreWallet() }
             }) {
-                HStack {
-                    if viewModel.isProcessing {
-                        ProgressView()
-                    }
-                    Text(viewModel.isProcessing ? "恢复中..." : "恢复钱包")
-                }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
+                AppActionButtonLabel(
+                    viewModel.isProcessing ? "恢复中..." : "恢复钱包",
+                    systemImage: "arrow.clockwise",
+                    isLoading: viewModel.isProcessing
+                )
             }
-            .buttonStyle(.glassProminent)
+            .buttonStyle(.appPrimaryAction)
             .padding(.horizontal, 40)
             .disabled(viewModel.isProcessing || viewModel.restoreInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
