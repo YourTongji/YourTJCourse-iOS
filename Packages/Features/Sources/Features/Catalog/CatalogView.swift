@@ -45,7 +45,7 @@ public struct CatalogView: View {
                 FilterSheetView(viewModel: viewModel)
             }
             .task {
-                await viewModel.loadInitial()
+                await viewModel.loadInitialIfNeeded()
             }
         }
     }

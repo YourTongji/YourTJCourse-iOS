@@ -52,6 +52,11 @@ public final class CatalogViewModel {
         isLoading = false
     }
 
+    public func loadInitialIfNeeded() async {
+        guard courses.isEmpty, !isLoading else { return }
+        await loadInitial()
+    }
+
     public func loadMore() async {
         guard hasMore, !isLoadingMore else { return }
         isLoadingMore = true
