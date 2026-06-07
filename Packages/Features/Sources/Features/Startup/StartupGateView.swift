@@ -49,12 +49,12 @@ public struct StartupGateView: View {
                 }
                 Spacer()
 
-            case .failed(let message):
+            case .failed(let message, _):
                 Spacer()
                 ErrorStateView(
                     message: message,
                     retryTitle: "重试",
-                    retryAction: { viewModel.retry() }
+                    retryAction: { Task { await viewModel.retry() } }
                 )
                 Spacer()
 
@@ -146,9 +146,46 @@ private struct MaintenanceContentView: View {
                     .foregroundStyle(AppColors.textSecondary)
             }
 
+            if let progress = config?.progress, !progress.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(progress) { step in
+                        HStack(spacing: 10) {
+                            Image(systemName: maintenanceStepIcon(step))
+                                .font(.caption)
+                                .foregroundStyle(step.active ? AppColors.cyan : AppColors.textSecondary)
+                                .frame(width: 18)
+                            Text(step.label)
+                                .font(AppTypography.caption)
+                                .foregroundStyle(step.active ? AppColors.textPrimary : AppColors.textSecondary)
+                            Spacer()
+                        }
+                    }
+                }
+                .padding()
+                .background(.cyan.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal)
+            }
+
+            if let lastUpdated = config?.lastUpdated {
+                Text("更新于 \(lastUpdated)")
+                    .font(AppTypography.smallLabel)
+                    .foregroundStyle(AppColors.textSecondary)
+            }
+
             Spacer()
         }
         .padding()
+    }
+
+    private func maintenanceStepIcon(_ step: MaintenanceProgressStep) -> String {
+        if step.done {
+            "checkmark.circle.fill"
+        } else if step.active {
+            "clock.badge"
+        } else {
+            "circle"
+        }
     }
 }
 
@@ -177,7 +214,10 @@ private struct MaintenanceContentView: View {
 }
 
 #Preview("Failed") {
-    startupGateWithViewModel(StartupViewModel(initialPhase: .failed("网络连接失败，请检查网络后重试")))
+    startupGateWithViewModel(StartupViewModel(initialPhase: .failed(
+        "网络连接失败，请检查网络后重试",
+        recovery: .runtimeState
+    )))
 }
 
 // MARK: - Preview Helper

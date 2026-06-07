@@ -7,12 +7,17 @@ import Platform
 @MainActor
 @Observable
 public final class StartupViewModel {
+    public enum FailureRecovery: Equatable {
+        case runtimeState
+        case captcha
+    }
+
     public enum Phase: Equatable {
         case loading
         case maintenance(maintenance: MaintenanceConfig?)
         case captcha
         case verifying
-        case failed(String)
+        case failed(String, recovery: FailureRecovery)
         case completed
     }
 
@@ -46,8 +51,7 @@ public final class StartupViewModel {
             }
         } catch {
             logger.error("Runtime state check failed: \(error.localizedDescription)")
-            // If we can't reach the server, proceed to captcha anyway
-            phase = .captcha
+            phase = .failed("无法获取运行状态，请检查网络后重试", recovery: .runtimeState)
         }
     }
 
@@ -59,18 +63,38 @@ public final class StartupViewModel {
                 body: StartupVerifyBody(token: token)
             )
             if response.success {
-                phase = .completed
+                if response.bypassed == "maintenance_mode" {
+                    await enterMaintenanceModeAfterBypass()
+                } else {
+                    phase = .completed
+                }
             } else {
-                phase = .failed("验证失败，请重试")
+                phase = .failed("验证失败，请重试", recovery: .captcha)
             }
         } catch {
             logger.error("Startup verify failed: \(error.localizedDescription)")
-            phase = .failed(error.localizedDescription)
+            phase = .failed(error.localizedDescription, recovery: .captcha)
         }
     }
 
-    public func retry() {
-        phase = .captcha
+    public func retry() async {
+        switch phase {
+        case .failed(_, recovery: .runtimeState):
+            await checkRuntimeState()
+        default:
+            phase = .captcha
+        }
+    }
+
+    private func enterMaintenanceModeAfterBypass() async {
+        do {
+            let state = try await settingsRepo.getRuntimeState()
+            announcements = state.announcements
+            phase = .maintenance(maintenance: state.maintenance.config)
+        } catch {
+            logger.error("Failed to load maintenance config after bypass: \(error.localizedDescription)")
+            phase = .maintenance(maintenance: nil)
+        }
     }
 }
 
