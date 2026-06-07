@@ -20,6 +20,10 @@ public final class CourseDetailViewModel {
     public private(set) var isFavorite = false
 
     let courseId: Int
+    /// When false, the "same teacher / same course other teachers" related section
+    /// is neither fetched nor shown. Used when the caller already picked a specific
+    /// teaching class (e.g. from the scheduler) and only wants that class's reviews.
+    private let loadsRelatedCourses: Bool
     private let courseRepo: CourseRepository
     private let reviewRepo: ReviewRepository
     private let walletRepo: WalletRepository
@@ -30,6 +34,7 @@ public final class CourseDetailViewModel {
 
     public init(
         courseId: Int,
+        loadsRelatedCourses: Bool = true,
         courseRepo: CourseRepository = .init(),
         reviewRepo: ReviewRepository = .init(),
         walletRepo: WalletRepository = .init(),
@@ -37,6 +42,7 @@ public final class CourseDetailViewModel {
         favoriteStore: CourseFavoriteStore = .init()
     ) {
         self.courseId = courseId
+        self.loadsRelatedCourses = loadsRelatedCourses
         self.courseRepo = courseRepo
         self.reviewRepo = reviewRepo
         self.walletRepo = walletRepo
@@ -69,11 +75,13 @@ public final class CourseDetailViewModel {
                 isFavorite = favoriteStore.isFavorite(courseId: courseDetail.id)
             }
             didLoadDetail = true
-            do {
-                relatedCourses = try await courseRepo.getRelatedCourses(id: courseId)
-            } catch {
-                relatedCourses = nil
-                logger.error("Failed to load related courses: \(error.localizedDescription)")
+            if loadsRelatedCourses {
+                do {
+                    relatedCourses = try await courseRepo.getRelatedCourses(id: courseId)
+                } catch {
+                    relatedCourses = nil
+                    logger.error("Failed to load related courses: \(error.localizedDescription)")
+                }
             }
         } catch {
             logger.error("Failed to load course detail: \(error.localizedDescription)")

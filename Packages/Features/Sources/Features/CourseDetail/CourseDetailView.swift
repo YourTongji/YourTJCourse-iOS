@@ -12,8 +12,13 @@ public struct CourseDetailView: View {
     @State private var showReviewSheet = false
     @State private var reviewToEdit: Review?
 
-    public init(courseId: Int) {
-        self._viewModel = State(initialValue: CourseDetailViewModel(courseId: courseId))
+    public init(courseId: Int, showsRelatedCourses: Bool = true) {
+        self._viewModel = State(
+            initialValue: CourseDetailViewModel(
+                courseId: courseId,
+                loadsRelatedCourses: showsRelatedCourses
+            )
+        )
     }
 
     public var body: some View {

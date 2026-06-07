@@ -32,6 +32,17 @@ private enum TeachingClassSelectionState {
     case sameCourseSelected
 }
 
+enum SchedulerFavoriteImportResult: Sendable {
+    /// Course + matching teaching class imported into candidates.
+    case imported
+    /// The course was already in the candidate list.
+    case alreadyPresent
+    /// The course exists this semester but the favorited teacher has no teaching class.
+    case noTeachingClass
+    /// The lookup failed (network / missing course this semester).
+    case failed(String)
+}
+
 private enum SchedulerSlotSheetPage: String, CaseIterable, Identifiable {
     case candidates
     case timeLookup
@@ -66,6 +77,30 @@ private struct SchedulerClassCandidate: Identifiable, Hashable, Sendable {
     let teachingClass: SchedulerTeachingClass
 
     var id: String { "\(course.courseCode)|\(teachingClass.code)" }
+}
+
+/// Value-based navigation target for a teaching-class review. Using a value with
+/// `.navigationDestination` (instead of an inline `NavigationLink` destination)
+/// avoids the double-push that happens when several `NavigationLink`s live inside
+/// the same `List` row.
+///
+/// The `classCode` is part of the value so that each teaching class produces a
+/// *distinct* target. Without it, classes that share a teacher (or whose teacher
+/// list is empty) would yield identical values, and SwiftUI would push one screen
+/// per duplicate link — nesting several identical review pages.
+private struct SchedulerReviewTarget: Hashable {
+    let courseCode: String
+    let classCode: String
+    let teacherName: String?
+    let teacherCode: String?
+
+    init(courseCode: String, teachingClass: SchedulerTeachingClass) {
+        self.courseCode = courseCode
+        self.classCode = teachingClass.code
+        let teacher = teachingClass.resolvedTeacher
+        self.teacherName = teacher?.teacherName.trimmed.nilIfEmpty
+        self.teacherCode = teacher?.teacherCode.trimmed.nilIfEmpty
+    }
 }
 
 fileprivate struct SchedulerCourseReviewInfo: Equatable, Sendable {
@@ -113,6 +148,7 @@ public struct SchedulerView: View {
     @State private var activeTimetableSlot: SchedulerTimetableSlot?
     @State private var showsClearConfirmation = false
     @State private var showsFavoriteImport = false
+    @State private var reviewTarget: SchedulerReviewTarget?
 
     public init() {
         self._viewModel = State(initialValue: SchedulerViewModel())
@@ -134,6 +170,13 @@ public struct SchedulerView: View {
                 pageContent
             }
             .navigationTitle("排课")
+            .navigationDestination(item: $reviewTarget) { target in
+                SchedulerCourseByCodeView(
+                    courseCode: target.courseCode,
+                    teacherName: target.teacherName,
+                    teacherCode: target.teacherCode
+                )
+            }
             .task { await viewModel.load() }
             .onAppear {
                 viewModel.refreshFavorites()
@@ -191,36 +234,51 @@ public struct SchedulerView: View {
         }
     }
 
-    @ViewBuilder
+    // All four pages are kept alive in a ZStack and toggled via opacity so each
+    // page retains its own scroll position (and other List UI state) when the user
+    // switches tabs and comes back, instead of being torn down and rebuilt.
     private var pageContent: some View {
-        switch selectedPage {
-        case .filters:
-            List {
-                filterSection
-                majorSection
-                timeLookupSection
+        ZStack {
+            page(.filters) {
+                List {
+                    filterSection
+                    majorSection
+                    timeLookupSection
+                }
             }
-            .refreshable { await viewModel.load() }
 
-        case .candidates:
-            List {
-                favoriteImportSection
-                resultsSection
+            page(.candidates) {
+                List {
+                    favoriteImportSection
+                    resultsSection
+                }
             }
-            .refreshable { await viewModel.load() }
 
-        case .selected:
-            List {
-                selectedPageSection
+            page(.selected) {
+                List {
+                    selectedPageSection
+                }
             }
-            .refreshable { await viewModel.load() }
 
-        case .timetable:
-            List {
-                timetableSection
+            page(.timetable) {
+                List {
+                    timetableSection
+                }
             }
-            .refreshable { await viewModel.load() }
         }
+    }
+
+    @ViewBuilder
+    private func page<Content: View>(
+        _ page: SchedulerPage,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        let isActive = selectedPage == page
+        content()
+            .refreshable { await viewModel.load() }
+            .opacity(isActive ? 1 : 0)
+            .allowsHitTesting(isActive)
+            .accessibilityHidden(!isActive)
     }
 
     private var filterSection: some View {
@@ -494,19 +552,32 @@ public struct SchedulerView: View {
                 ForEach(viewModel.searchResults) { course in
                     SchedulerCourseResultRow(
                         course: course,
-                        reviewInfo: viewModel.reviewInfo(for: course),
-                        isFavorite: viewModel.isFavorite(course: course),
                         isExpanded: viewModel.expandedCourseCode == course.courseCode,
                         isLoading: viewModel.loadingDetailsCourseCode == course.courseCode,
                         classes: viewModel.classes(for: course),
                         selectionState: { teachingClass in
                             viewModel.selectionState(course: course, teachingClass: teachingClass)
                         },
+                        reviewInfo: { teachingClass in
+                            viewModel.reviewInfo(course: course, teachingClass: teachingClass)
+                        },
+                        isFavorite: { teachingClass in
+                            viewModel.isFavorite(course: course, teachingClass: teachingClass)
+                        },
                         onToggle: {
                             Task { await viewModel.toggleDetails(for: course) }
                         },
                         onAdd: { teachingClass in
                             viewModel.add(course: course, teachingClass: teachingClass)
+                        },
+                        onRemove: { teachingClass in
+                            viewModel.remove(course: course, teachingClass: teachingClass)
+                        },
+                        onShowReview: { teachingClass in
+                            reviewTarget = SchedulerReviewTarget(
+                                courseCode: course.courseCode,
+                                teachingClass: teachingClass
+                            )
                         }
                     )
                 }
@@ -577,7 +648,14 @@ public final class SchedulerViewModel {
     private let logger = AppLogger(category: "Scheduler")
     private var detailsByCourseCode: [String: [SchedulerTeachingClass]] = [:]
     private var timetableLookupDetailsByCourseCode: [String: [SchedulerTeachingClass]] = [:]
-    private var reviewInfoByCourseCode: [String: SchedulerCourseReviewInfo] = [:]
+    /// Review/rating metadata keyed per teaching class (course + teacher), because
+    /// reviews in this system target a course taught by a specific teacher rather
+    /// than the whole course.
+    private var reviewInfoByClassKey: [String: SchedulerCourseReviewInfo] = [:]
+    /// Class keys that have already been resolved over the network, so repeated
+    /// expands don't refetch (favorite-seeded entries are absent here and still
+    /// get one network refresh).
+    private var hydratedClassKeys: Set<String> = []
     private var timetableLookupSlotId: String?
     private let selectedClassesStorageKey = "com.yourtj.course.scheduler.selectedClassesByCalendar"
 
@@ -696,7 +774,6 @@ public final class SchedulerViewModel {
             }
             searchResults = summaries
             detailsByCourseCode = details
-            hydrateReviewInfoInBackground(for: summaries)
         } catch {
             logger.error("Failed to load major courses: \(error.localizedDescription)")
             self.error = error.localizedDescription
@@ -742,7 +819,6 @@ public final class SchedulerViewModel {
                 day: day,
                 section: Self.sectionGroup(for: section)
             )
-            hydrateReviewInfoInBackground(for: timetableLookupResults)
         } catch {
             logger.error("Failed to load timetable slot courses: \(error.localizedDescription)")
             self.error = error.localizedDescription
@@ -760,15 +836,23 @@ public final class SchedulerViewModel {
         }
 
         timetableLookupExpandedCourseCode = course.courseCode
-        guard timetableLookupDetailsByCourseCode[course.courseCode] == nil else { return }
+
+        // Already loaded (e.g. expanded before): still ensure review info is hydrated.
+        if let cached = timetableLookupDetailsByCourseCode[course.courseCode] {
+            hydrateClassReviewInfoInBackground(courseCode: course.courseCode, classes: cached)
+            return
+        }
+
         loadingTimetableLookupDetailsCourseCode = course.courseCode
         defer { loadingTimetableLookupDetailsCourseCode = nil }
 
         do {
-            timetableLookupDetailsByCourseCode[course.courseCode] = try await schedulerRepo.findCourseDetails(
+            let classes = try await schedulerRepo.findCourseDetails(
                 calendarId: selectedCalendarId,
                 courseCode: course.courseCode
             )
+            timetableLookupDetailsByCourseCode[course.courseCode] = classes
+            hydrateClassReviewInfoInBackground(courseCode: course.courseCode, classes: classes)
         } catch {
             logger.error("Failed to load timetable slot course details: \(error.localizedDescription)")
             self.error = error.localizedDescription
@@ -782,15 +866,25 @@ public final class SchedulerViewModel {
         }
 
         expandedCourseCode = course.courseCode
-        guard detailsByCourseCode[course.courseCode] == nil else { return }
+
+        // Teaching-class details may already be cached (e.g. preloaded by the major
+        // course table or a previous expand). Hydrate review info regardless, since
+        // it is fetched lazily per teaching class and may not have run yet.
+        if let cached = detailsByCourseCode[course.courseCode] {
+            hydrateClassReviewInfoInBackground(courseCode: course.courseCode, classes: cached)
+            return
+        }
+
         loadingDetailsCourseCode = course.courseCode
         defer { loadingDetailsCourseCode = nil }
 
         do {
-            detailsByCourseCode[course.courseCode] = try await schedulerRepo.findCourseDetails(
+            let classes = try await schedulerRepo.findCourseDetails(
                 calendarId: selectedCalendarId,
                 courseCode: course.courseCode
             )
+            detailsByCourseCode[course.courseCode] = classes
+            hydrateClassReviewInfoInBackground(courseCode: course.courseCode, classes: classes)
         } catch {
             logger.error("Failed to load scheduler course details: \(error.localizedDescription)")
             self.error = error.localizedDescription
@@ -803,36 +897,118 @@ public final class SchedulerViewModel {
 
     public func refreshFavorites() {
         favoriteCourses = favoriteStore.load()
-        seedReviewInfoFromFavorites()
     }
 
-    @discardableResult
-    public func importFavorite(_ favorite: FavoriteCourse) -> Bool {
-        let summary = SchedulerCourseSummary(favorite: favorite)
-        reviewInfoByCourseCode[summary.courseCode] = SchedulerCourseReviewInfo(favorite: favorite)
-        guard !searchResults.contains(where: { $0.courseCode == summary.courseCode }) else {
-            return false
+    /// Imports a favorited course together with the teaching class taught by the
+    /// favorited teacher. A favorite is teacher-specific, so the import only
+    /// succeeds when the current semester actually offers that teacher's class.
+    func importFavorite(_ favorite: FavoriteCourse) async -> SchedulerFavoriteImportResult {
+        guard selectedCalendarId != 0 else {
+            return .failed("请先选择学期")
         }
-        searchResults.insert(summary, at: 0)
-        return true
-    }
 
-    @discardableResult
-    public func importAllFavorites() -> Int {
-        refreshFavorites()
-        return favoriteCourses.reduce(into: 0) { count, favorite in
-            if importFavorite(favorite) {
-                count += 1
+        let summary = SchedulerCourseSummary(favorite: favorite)
+        let courseCode = summary.courseCode
+
+        let teachingClasses: [SchedulerTeachingClass]
+        if let cached = detailsByCourseCode[courseCode] {
+            teachingClasses = cached
+        } else {
+            do {
+                teachingClasses = try await schedulerRepo.findCourseDetails(
+                    calendarId: selectedCalendarId,
+                    courseCode: courseCode
+                )
+            } catch {
+                logger.error("Failed to resolve favorite teaching classes for \(courseCode): \(error.localizedDescription)")
+                return .failed("无法获取「\(favorite.name)」本学期的教学班")
             }
         }
+
+        let matchedClasses = teachingClasses.filter { teacherMatches(favorite: favorite, teachingClass: $0) }
+        guard !matchedClasses.isEmpty else {
+            return .noTeachingClass
+        }
+
+        // Keep all teaching classes available so the user sees the full picture,
+        // while the favorited teacher's class is highlighted via favorite matching.
+        detailsByCourseCode[courseCode] = teachingClasses
+        // Seed the matched classes' rating from the favorite snapshot so it shows
+        // immediately; network hydration will refresh it per class afterwards.
+        for matched in matchedClasses {
+            let key = classReviewKey(courseCode: courseCode, teachingClass: matched)
+            if reviewInfoByClassKey[key] == nil {
+                reviewInfoByClassKey[key] = SchedulerCourseReviewInfo(favorite: favorite)
+            }
+        }
+
+        let alreadyPresent = searchResults.contains { $0.courseCode == courseCode }
+        if !alreadyPresent {
+            searchResults.insert(summary, at: 0)
+        }
+        expandedCourseCode = courseCode
+        hydrateClassReviewInfoInBackground(courseCode: courseCode, classes: teachingClasses)
+
+        return alreadyPresent ? .alreadyPresent : .imported
     }
 
-    fileprivate func reviewInfo(for course: SchedulerCourseSummary) -> SchedulerCourseReviewInfo? {
-        reviewInfoByCourseCode[course.courseCode]
+    /// Imports every favorite, reporting how many landed and how many could not be
+    /// matched to a teaching class this semester.
+    func importAllFavorites() async -> (imported: Int, skipped: Int, failed: Int) {
+        refreshFavorites()
+        var imported = 0
+        var skipped = 0
+        var failed = 0
+        for favorite in favoriteCourses {
+            switch await importFavorite(favorite) {
+            case .imported: imported += 1
+            case .alreadyPresent: skipped += 1
+            case .noTeachingClass, .failed: failed += 1
+            }
+        }
+        return (imported, skipped, failed)
     }
 
-    fileprivate func isFavorite(course: SchedulerCourseSummary) -> Bool {
-        favoriteCourses.contains { $0.code == course.courseCode }
+    fileprivate func reviewInfo(
+        course: SchedulerCourseSummary,
+        teachingClass: SchedulerTeachingClass
+    ) -> SchedulerCourseReviewInfo? {
+        reviewInfoByClassKey[classReviewKey(courseCode: course.courseCode, teachingClass: teachingClass)]
+    }
+
+    fileprivate func isFavorite(
+        course: SchedulerCourseSummary,
+        teachingClass: SchedulerTeachingClass
+    ) -> Bool {
+        favoriteCourses.contains { favorite in
+            favorite.code == course.courseCode && teacherMatches(favorite: favorite, teachingClass: teachingClass)
+        }
+    }
+
+    /// Review info is keyed per *teaching class* (course code + class code), not
+    /// per teacher, so two classes never share a review entry — even when they are
+    /// taught by the same teacher or have no teacher listed.
+    private func classReviewKey(courseCode: String, teachingClass: SchedulerTeachingClass) -> String {
+        "\(courseCode)|\(teachingClass.code)"
+    }
+
+    private func teacherMatches(favorite: FavoriteCourse, teachingClass: SchedulerTeachingClass) -> Bool {
+        let favoriteTokens = Self.teacherTokens(from: favorite.teacherName)
+        // Without a teacher name we cannot disambiguate; treat as a match so the
+        // favorite still surfaces rather than silently disappearing.
+        guard !favoriteTokens.isEmpty else { return true }
+        let classTokens = teachingClass.teacherMatchTokens
+        guard !classTokens.isEmpty else { return false }
+        return !favoriteTokens.isDisjoint(with: classTokens)
+    }
+
+    private static func teacherTokens(from value: String) -> Set<String> {
+        Set(
+            value
+                .split(whereSeparator: { "/、,，; ；".contains($0) })
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
     }
 
     public func timetableLookupClasses(
@@ -956,6 +1132,10 @@ public final class SchedulerViewModel {
         persistSelectedClasses()
     }
 
+    public func remove(course: SchedulerCourseSummary, teachingClass: SchedulerTeachingClass) {
+        remove(SchedulerSelectedClass(course: course, teachingClass: teachingClass))
+    }
+
     public func clearSelectedClasses() {
         selectedClasses.removeAll()
         persistSelectedClasses()
@@ -1045,44 +1225,44 @@ public final class SchedulerViewModel {
 
         do {
             searchResults = try await operation()
-            hydrateReviewInfoInBackground(for: searchResults)
         } catch {
             logger.error("Scheduler search failed: \(error.localizedDescription)")
             self.error = error.localizedDescription
         }
     }
 
-    private func hydrateReviewInfoInBackground(for courses: [SchedulerCourseSummary]) {
-        guard !courses.isEmpty else { return }
+    private func hydrateClassReviewInfoInBackground(
+        courseCode: String,
+        classes: [SchedulerTeachingClass]
+    ) {
+        guard !classes.isEmpty else { return }
         Task { [weak self] in
-            await self?.hydrateReviewInfo(for: courses)
+            await self?.hydrateClassReviewInfo(courseCode: courseCode, classes: classes)
         }
     }
 
-    private func hydrateReviewInfo(for courses: [SchedulerCourseSummary]) async {
-        refreshFavorites()
-
-        let unresolvedCourses = courses
-            .filter { reviewInfoByCourseCode[$0.courseCode] == nil }
-            .prefix(60)
-
-        for course in unresolvedCourses {
+    private func hydrateClassReviewInfo(
+        courseCode: String,
+        classes: [SchedulerTeachingClass]
+    ) async {
+        for teachingClass in classes {
+            let key = classReviewKey(courseCode: courseCode, teachingClass: teachingClass)
+            if hydratedClassKeys.contains(key) { continue }
+            let teacher = teachingClass.resolvedTeacher
             do {
-                let detail = try await courseRepo.getCourseByCode(code: course.courseCode)
-                reviewInfoByCourseCode[course.courseCode] = SchedulerCourseReviewInfo(
+                let detail = try await courseRepo.getCourseByCode(
+                    code: courseCode,
+                    teacherName: teacher?.teacherName,
+                    teacherCode: teacher?.teacherCode
+                )
+                reviewInfoByClassKey[key] = SchedulerCourseReviewInfo(
                     course: detail,
                     isFavorite: favoriteStore.isFavorite(courseId: detail.id)
-                        || favoriteStore.isFavorite(courseCode: course.courseCode)
                 )
+                hydratedClassKeys.insert(key)
             } catch {
-                logger.error("Failed to hydrate review info for \(course.courseCode): \(error.localizedDescription)")
+                logger.error("Failed to hydrate review info for \(courseCode) (\(teacher?.teacherName ?? "?")): \(error.localizedDescription)")
             }
-        }
-    }
-
-    private func seedReviewInfoFromFavorites() {
-        for favorite in favoriteCourses {
-            reviewInfoByCourseCode[favorite.code] = SchedulerCourseReviewInfo(favorite: favorite)
         }
     }
 
@@ -1143,59 +1323,50 @@ public struct SchedulerScheduleEntry: Equatable, Sendable {
 
 private struct SchedulerCourseResultRow: View {
     let course: SchedulerCourseSummary
-    let reviewInfo: SchedulerCourseReviewInfo?
-    let isFavorite: Bool
     let isExpanded: Bool
     let isLoading: Bool
     let classes: [SchedulerTeachingClass]
     let selectionState: (SchedulerTeachingClass) -> TeachingClassSelectionState
+    let reviewInfo: (SchedulerTeachingClass) -> SchedulerCourseReviewInfo?
+    let isFavorite: (SchedulerTeachingClass) -> Bool
     let onToggle: () -> Void
     let onAdd: (SchedulerTeachingClass) -> Void
+    let onRemove: (SchedulerTeachingClass) -> Void
+    let onShowReview: (SchedulerTeachingClass) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(course.courseName)
-                        .font(.headline)
-                    Text([course.courseCode, course.facultyI18n, creditText].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    SchedulerCourseMetaBadges(
-                        reviewInfo: reviewInfo,
-                        isFavorite: isFavorite
-                    )
-                    if !course.courseNature.isEmpty || !course.campus.isEmpty {
-                        Text((course.courseNature + course.campus).prefix(4).joined(separator: " / "))
-                            .font(.caption2)
+            Button(action: onToggle) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(course.courseName)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        Text(metaText)
+                            .font(.caption)
                             .foregroundStyle(.secondary)
-                    }
-                }
-
-                Spacer()
-
-                HStack(spacing: 12) {
-                    NavigationLink {
-                        SchedulerCourseByCodeView(courseCode: course.courseCode)
-                    } label: {
-                        Label("评课", systemImage: "text.bubble")
-                            .labelStyle(.iconOnly)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(AppColors.cyan)
-                    .accessibilityLabel("查看 \(course.courseName) 评课")
-
-                    Button(action: onToggle) {
-                        if isLoading {
-                            ProgressView()
-                        } else {
-                            Image(systemName: isExpanded ? "chevron.up.circle.fill" : "chevron.down.circle")
+                        if !natureText.isEmpty {
+                            Text(natureText)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(isExpanded ? "收起教学班" : "展开教学班")
+
+                    Spacer(minLength: 8)
+
+                    if isLoading {
+                        ProgressView()
+                    } else {
+                        Label(classCountText, systemImage: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .labelStyle(.titleAndIcon)
+                            .foregroundStyle(AppColors.cyan)
+                    }
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isExpanded ? "收起 \(course.courseName) 教学班" : "展开 \(course.courseName) 教学班")
 
             if isExpanded {
                 if isLoading {
@@ -1215,10 +1386,13 @@ private struct SchedulerCourseResultRow: View {
                             TeachingClassRow(
                                 course: course,
                                 teachingClass: teachingClass,
-                                selectionState: selectionState(teachingClass)
-                            ) {
-                                onAdd(teachingClass)
-                            }
+                                selectionState: selectionState(teachingClass),
+                                reviewInfo: reviewInfo(teachingClass),
+                                isFavorite: isFavorite(teachingClass),
+                                onAdd: { onAdd(teachingClass) },
+                                onRemove: { onRemove(teachingClass) },
+                                onShowReview: { onShowReview(teachingClass) }
+                            )
                         }
                     }
                 }
@@ -1227,27 +1401,46 @@ private struct SchedulerCourseResultRow: View {
         .padding(.vertical, 4)
     }
 
+    private var metaText: String {
+        [course.courseCode, course.facultyI18n, creditText]
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+
+    private var natureText: String {
+        (course.courseNature + course.campus).prefix(4).joined(separator: " / ")
+    }
+
+    private var classCountText: String {
+        if isExpanded { return "收起" }
+        return classes.isEmpty ? "教学班" : "\(classes.count) 班"
+    }
+
     private var creditText: String {
         course.credit > 0 ? "\(course.credit.cleanText) 学分" : ""
     }
 }
 
-private struct SchedulerCourseMetaBadges: View {
+/// Per-teaching-class rating + favorite badge. Reviews target a specific
+/// teacher's class, so this is shown inside each teaching class rather than once
+/// for the whole course.
+private struct SchedulerClassReviewBadge: View {
     let reviewInfo: SchedulerCourseReviewInfo?
     let isFavorite: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             if isFavorite {
-                Label("已收藏", systemImage: "star.fill")
+                Image(systemName: "star.fill")
                     .foregroundStyle(.yellow)
+                    .accessibilityLabel("已收藏")
             }
 
             Label(reviewInfo?.ratingText ?? "评课未关联", systemImage: "chart.bar.fill")
                 .foregroundStyle(ratingColor)
+                .labelStyle(.titleAndIcon)
         }
         .font(.caption2.weight(.medium))
-        .labelStyle(.titleAndIcon)
     }
 
     private var ratingColor: Color {
@@ -1264,41 +1457,31 @@ private struct TeachingClassRow: View {
     let course: SchedulerCourseSummary
     let teachingClass: SchedulerTeachingClass
     let selectionState: TeachingClassSelectionState
+    let reviewInfo: SchedulerCourseReviewInfo?
+    let isFavorite: Bool
     let onAdd: () -> Void
+    let onRemove: () -> Void
+    let onShowReview: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("教学班 \(teachingClass.code)")
                         .font(.subheadline.bold())
                     Text(teachingClass.teacherNames)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    SchedulerClassReviewBadge(reviewInfo: reviewInfo, isFavorite: isFavorite)
                 }
-                Spacer()
 
-                VStack(alignment: .trailing, spacing: 8) {
-                    NavigationLink {
-                        SchedulerCourseByCodeView(
-                            courseCode: course.courseCode,
-                            teacherName: teachingClass.primaryTeacher?.teacherName,
-                            teacherCode: teachingClass.primaryTeacher?.teacherCode
-                        )
-                    } label: {
-                        Label("评课", systemImage: "text.bubble")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(AppColors.cyan)
-                    .accessibilityLabel("查看 \(course.courseName) \(teachingClass.teacherNames) 评课")
+                Spacer(minLength: 8)
 
-                    Button(action: onAdd) {
-                        AppActionButtonLabel(actionTitle, systemImage: actionIcon)
-                    }
-                    .buttonStyle(AppActionButtonStyle(role: actionRole, size: .compact, fillsWidth: false))
-                    .disabled(selectionState != .none)
+                Button(action: onSelectionTap) {
+                    AppActionButtonLabel(actionTitle, systemImage: actionIcon)
                 }
+                .buttonStyle(AppActionButtonStyle(role: actionRole, size: .compact, fillsWidth: false))
+                .disabled(selectionState == .sameCourseSelected)
             }
 
             if !teachingClass.campus.isEmpty || !teachingClass.teachingLanguage.isEmpty {
@@ -1331,6 +1514,32 @@ private struct TeachingClassRow: View {
                 .stroke(rowBorder, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        // Tapping anywhere on the card (except the add/remove button) opens the
+        // review detail for this specific teaching class.
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .onTapGesture { onShowReview() }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("查看 \(teachingClass.teacherNames) 的评课详情")
+        .accessibilityAction(named: Text(selectionActionAccessibilityName)) {
+            onSelectionTap()
+        }
+    }
+
+    private func onSelectionTap() {
+        switch selectionState {
+        case .none: onAdd()
+        case .selected: onRemove()
+        case .sameCourseSelected: break
+        }
+    }
+
+    private var selectionActionAccessibilityName: String {
+        switch selectionState {
+        case .none: "加入课表"
+        case .selected: "取消选择"
+        case .sameCourseSelected: "已选其他教学班"
+        }
     }
 
     private var actionTitle: String {
@@ -1377,6 +1586,7 @@ private struct SchedulerSlotSheet: View {
     let slot: SchedulerTimetableSlot
     let onDismiss: () -> Void
     @State private var selectedPage: SchedulerSlotSheetPage = .candidates
+    @State private var reviewTarget: SchedulerReviewTarget?
 
     var body: some View {
         NavigationStack {
@@ -1404,6 +1614,13 @@ private struct SchedulerSlotSheet: View {
             }
             .navigationTitle(slot.title)
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(item: $reviewTarget) { target in
+                SchedulerCourseByCodeView(
+                    courseCode: target.courseCode,
+                    teacherName: target.teacherName,
+                    teacherCode: target.teacherCode
+                )
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完成", action: onDismiss)
@@ -1454,6 +1671,14 @@ private struct SchedulerSlotSheet: View {
                             teachingClass: candidate.teachingClass,
                             replacing: selectedClass
                         ),
+                        reviewInfo: viewModel.reviewInfo(
+                            course: candidate.course,
+                            teachingClass: candidate.teachingClass
+                        ),
+                        isFavorite: viewModel.isFavorite(
+                            course: candidate.course,
+                            teachingClass: candidate.teachingClass
+                        ),
                         actionTitle: selectedClass == nil ? "加课" : "替换",
                         actionIcon: selectedClass == nil ? "plus.circle" : "arrow.triangle.2.circlepath",
                         onSelect: {
@@ -1473,6 +1698,12 @@ private struct SchedulerSlotSheet: View {
                             if didSucceed {
                                 onDismiss()
                             }
+                        },
+                        onShowReview: {
+                            reviewTarget = SchedulerReviewTarget(
+                                courseCode: candidate.course.courseCode,
+                                teachingClass: candidate.teachingClass
+                            )
                         }
                     )
                 }
@@ -1499,8 +1730,6 @@ private struct SchedulerSlotSheet: View {
                 ForEach(viewModel.timetableLookupResults) { course in
                     SchedulerCourseResultRow(
                         course: course,
-                        reviewInfo: viewModel.reviewInfo(for: course),
-                        isFavorite: viewModel.isFavorite(course: course),
                         isExpanded: viewModel.timetableLookupExpandedCourseCode == course.courseCode,
                         isLoading: viewModel.loadingTimetableLookupDetailsCourseCode == course.courseCode,
                         classes: viewModel.timetableLookupClasses(
@@ -1510,6 +1739,12 @@ private struct SchedulerSlotSheet: View {
                         ),
                         selectionState: { teachingClass in
                             viewModel.selectionState(course: course, teachingClass: teachingClass)
+                        },
+                        reviewInfo: { teachingClass in
+                            viewModel.reviewInfo(course: course, teachingClass: teachingClass)
+                        },
+                        isFavorite: { teachingClass in
+                            viewModel.isFavorite(course: course, teachingClass: teachingClass)
                         },
                         onToggle: {
                             Task {
@@ -1524,6 +1759,15 @@ private struct SchedulerSlotSheet: View {
                             if viewModel.add(course: course, teachingClass: teachingClass) {
                                 onDismiss()
                             }
+                        },
+                        onRemove: { teachingClass in
+                            viewModel.remove(course: course, teachingClass: teachingClass)
+                        },
+                        onShowReview: { teachingClass in
+                            reviewTarget = SchedulerReviewTarget(
+                                courseCode: course.courseCode,
+                                teachingClass: teachingClass
+                            )
                         }
                     )
                 }
@@ -1566,7 +1810,10 @@ private struct SchedulerCourseByCodeView: View {
             case .loading:
                 LoadingView(message: "正在查找评课...")
             case .loaded(let courseId):
-                CourseDetailView(courseId: courseId)
+                // The user already picked a specific teaching class, so don't show
+                // the "same course other teachers" related section (which lists the
+                // course's other parallel teaching classes).
+                CourseDetailView(courseId: courseId, showsRelatedCourses: false)
             case .failed(let message):
                 ErrorStateView(message: message) {
                     Task { await load() }
@@ -1604,6 +1851,8 @@ private struct SchedulerFavoriteImportSheet: View {
     let viewModel: SchedulerViewModel
     let onDismiss: () -> Void
     @State private var message: String?
+    @State private var importingCode: String?
+    @State private var isImportingAll = false
 
     var body: some View {
         NavigationStack {
@@ -1617,17 +1866,23 @@ private struct SchedulerFavoriteImportSheet: View {
                 } else {
                     Section {
                         Button {
-                            let importedCount = viewModel.importAllFavorites()
-                            message = importedCount == 0 ? "收藏课程已全部在候选中" : "已导入 \(importedCount) 门收藏课程"
+                            Task { await importAll() }
                         } label: {
-                            Label("导入全部收藏", systemImage: "square.and.arrow.down")
+                            AppActionButtonLabel(
+                                isImportingAll ? "正在导入..." : "导入全部收藏",
+                                systemImage: "square.and.arrow.down",
+                                isLoading: isImportingAll
+                            )
                         }
+                        .disabled(isImportingAll || importingCode != nil)
 
                         if let message {
                             Text(message)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                    } footer: {
+                        Text("收藏是针对教学班（课程 + 教师）的。导入会带入本学期该教师的教学班；若本学期没有对应教学班则会导入失败。")
                     }
 
                     Section("收藏课程") {
@@ -1635,14 +1890,12 @@ private struct SchedulerFavoriteImportSheet: View {
                             SchedulerFavoriteImportRow(
                                 favorite: favorite,
                                 isImported: viewModel.searchResults.contains { $0.courseCode == favorite.code },
+                                isImporting: importingCode == favorite.code,
                                 onImport: {
-                                    if viewModel.importFavorite(favorite) {
-                                        message = "已导入 \(favorite.name)"
-                                    } else {
-                                        message = "\(favorite.name) 已在候选中"
-                                    }
+                                    Task { await importOne(favorite) }
                                 }
                             )
+                            .disabled(isImportingAll)
                         }
                     }
                 }
@@ -1659,11 +1912,42 @@ private struct SchedulerFavoriteImportSheet: View {
             }
         }
     }
+
+    private func importOne(_ favorite: FavoriteCourse) async {
+        guard importingCode == nil, !isImportingAll else { return }
+        importingCode = favorite.code
+        defer { importingCode = nil }
+
+        switch await viewModel.importFavorite(favorite) {
+        case .imported:
+            message = "已导入 \(favorite.name)（\(favorite.teacherName)）"
+        case .alreadyPresent:
+            message = "\(favorite.name) 已在候选中"
+        case .noTeachingClass:
+            message = "本学期没有 \(favorite.teacherName) 的「\(favorite.name)」教学班，导入失败"
+        case .failed(let reason):
+            message = reason
+        }
+    }
+
+    private func importAll() async {
+        guard !isImportingAll, importingCode == nil else { return }
+        isImportingAll = true
+        defer { isImportingAll = false }
+
+        let result = await viewModel.importAllFavorites()
+        var parts: [String] = []
+        if result.imported > 0 { parts.append("已导入 \(result.imported) 门") }
+        if result.skipped > 0 { parts.append("\(result.skipped) 门已在候选") }
+        if result.failed > 0 { parts.append("\(result.failed) 门无教学班") }
+        message = parts.isEmpty ? "没有可导入的收藏课程" : parts.joined(separator: "，")
+    }
 }
 
 private struct SchedulerFavoriteImportRow: View {
     let favorite: FavoriteCourse
     let isImported: Bool
+    let isImporting: Bool
     let onImport: () -> Void
 
     var body: some View {
@@ -1687,10 +1971,14 @@ private struct SchedulerFavoriteImportRow: View {
             Spacer()
 
             Button(action: onImport) {
-                AppActionButtonLabel(isImported ? "已导入" : "导入", systemImage: isImported ? "checkmark.circle.fill" : "plus.circle")
+                AppActionButtonLabel(
+                    isImported ? "已导入" : "导入",
+                    systemImage: isImported ? "checkmark.circle.fill" : "plus.circle",
+                    isLoading: isImporting
+                )
             }
             .buttonStyle(AppActionButtonStyle(role: isImported ? .primary : .secondary, size: .compact, fillsWidth: false))
-            .disabled(isImported)
+            .disabled(isImported || isImporting)
         }
         .padding(.vertical, 4)
     }
@@ -1796,9 +2084,12 @@ private struct SchedulerArrangementDetailRow: View {
 private struct SchedulerSlotCandidateRow: View {
     let candidate: SchedulerClassCandidate
     let selectionState: TeachingClassSelectionState
+    let reviewInfo: SchedulerCourseReviewInfo?
+    let isFavorite: Bool
     let actionTitle: String
     let actionIcon: String
     let onSelect: () -> Void
+    let onShowReview: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -1812,35 +2103,30 @@ private struct SchedulerSlotCandidateRow: View {
                     Text(candidate.teachingClass.teacherNames)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    SchedulerClassReviewBadge(reviewInfo: reviewInfo, isFavorite: isFavorite)
                 }
 
-                Spacer()
+                Spacer(minLength: 8)
 
-                VStack(alignment: .trailing, spacing: 8) {
-                    NavigationLink {
-                        SchedulerCourseByCodeView(
-                            courseCode: candidate.course.courseCode,
-                            teacherName: candidate.teachingClass.primaryTeacher?.teacherName,
-                            teacherCode: candidate.teachingClass.primaryTeacher?.teacherCode
-                        )
-                    } label: {
-                        Label("评课", systemImage: "text.bubble")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(AppColors.cyan)
-
-                    Button(action: onSelect) {
-                        AppActionButtonLabel(displayActionTitle, systemImage: displayActionIcon)
-                    }
-                    .buttonStyle(AppActionButtonStyle(role: actionRole, size: .compact, fillsWidth: false))
-                    .disabled(selectionState != .none)
+                Button(action: onSelect) {
+                    AppActionButtonLabel(displayActionTitle, systemImage: displayActionIcon)
                 }
+                .buttonStyle(AppActionButtonStyle(role: actionRole, size: .compact, fillsWidth: false))
+                .disabled(selectionState != .none)
             }
 
             SchedulerTeachingClassDetailBlock(teachingClass: candidate.teachingClass)
         }
         .padding(.vertical, 4)
+        // Tap anywhere on the card (except the action button) to view the review.
+        .contentShape(Rectangle())
+        .onTapGesture { onShowReview() }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("查看 \(candidate.teachingClass.teacherNames) 的评课详情")
+        .accessibilityAction(named: Text(displayActionTitle)) {
+            if selectionState == .none { onSelect() }
+        }
     }
 
     private var displayActionTitle: String {
@@ -1910,6 +2196,48 @@ private struct TimetableCell: View {
 private extension SchedulerTeachingClass {
     var primaryTeacher: SchedulerTeacher? {
         teachers.first { !$0.teacherName.trimmed.isEmpty || !$0.teacherCode.trimmed.isEmpty }
+    }
+
+    /// Best-effort teacher for review lookup. Prefers the structured `teachers`
+    /// list, but falls back to parsing the name out of an arrangement's
+    /// `teacherAndCode` (e.g. "张老师 1001") when the list is empty — otherwise
+    /// every class of the course would resolve to the same (nil) teacher and
+    /// share one review page.
+    var resolvedTeacher: SchedulerTeacher? {
+        if let teacher = primaryTeacher {
+            return teacher
+        }
+        for arrangement in arrangementInfo {
+            guard let raw = arrangement.teacherAndCode?.trimmed, !raw.isEmpty else { continue }
+            let firstEntry = raw.split(separator: ",").first.map(String.init) ?? raw
+            // The numeric suffix is not the review system's teacher code, so only
+            // the name is reliable here.
+            let name = firstEntry.split(separator: " ").first.map(String.init) ?? firstEntry
+            let trimmedName = name.trimmed
+            if !trimmedName.isEmpty {
+                return SchedulerTeacher(teacherCode: "", teacherName: trimmedName)
+            }
+        }
+        return nil
+    }
+
+    /// Teacher name tokens used for matching favorites to teaching classes.
+    var teacherMatchTokens: Set<String> {
+        let listed = Set(teachers.flatMap { Self.nameTokens(from: $0.teacherName) })
+        if !listed.isEmpty { return listed }
+        if let resolved = resolvedTeacher {
+            return Self.nameTokens(from: resolved.teacherName)
+        }
+        return []
+    }
+
+    private static func nameTokens(from value: String) -> Set<String> {
+        Set(
+            value
+                .split(whereSeparator: { "/、,，; ；".contains($0) })
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
     }
 
     func occupies(day: Int, section: Int) -> Bool {
