@@ -39,9 +39,10 @@ GitHub 上记录「每个版本号做了什么」。
 发布步骤：
 
 1. 本地修改 `App/Info.plist`：升级 `CFBundleShortVersionString`（如 `1.2.0`）和
-   `CFBundleVersion`（构建号），提交并合入要发布的分支。
+   `CFBundleVersion`（构建号），通过 PR **合入 `master`**（发布只能从 `master` 切，
+   其 CI 已由分支保护保证为绿）。
 2. 本地用 Xcode Archive 并上传同一版本到 App Store Connect 分发。
-3. 确认发布，打 tag 并推送（tag 不受分支保护限制）：
+3. 在 `master` 上确认发布，打 tag 并推送（tag 不受分支保护限制）：
 
    ```bash
    scripts/release.sh          # 用 Info.plist 中的版本号打 v<version> 并推送

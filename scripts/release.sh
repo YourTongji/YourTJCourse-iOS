@@ -28,14 +28,31 @@ if [[ "$VERSION" != "$PLIST_VERSION" ]]; then
   exit 1
 fi
 
+if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
+  echo "error: version '$VERSION' is not a dotted numeric version (e.g. 1.2.0)." >&2
+  exit 1
+fi
+
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "error: working tree is not clean — commit the version bump first." >&2
   exit 1
 fi
 
+# Releases must be cut from master (its CI is green via branch protection), so the
+# GitHub Releases page reflects shipped history — not feature-branch commits.
+git fetch --no-tags --quiet origin master
+if ! git merge-base --is-ancestor HEAD FETCH_HEAD; then
+  echo "error: HEAD is not on origin/master — release only from master." >&2
+  exit 1
+fi
+
 TAG="v${VERSION}"
 if git rev-parse "$TAG" >/dev/null 2>&1; then
-  echo "error: tag $TAG already exists." >&2
+  echo "error: tag $TAG already exists locally." >&2
+  exit 1
+fi
+if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+  echo "error: tag $TAG already exists on origin." >&2
   exit 1
 fi
 
