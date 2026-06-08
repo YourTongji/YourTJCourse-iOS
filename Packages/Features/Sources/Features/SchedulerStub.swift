@@ -366,11 +366,69 @@ public struct SchedulerView: View {
                 }
             }
 
-            Picker("专业", selection: $viewModel.selectedMajorCode) {
-                Text("未选择").tag("")
-                ForEach(viewModel.majors) { major in
-                    Text("\(major.code) \(major.name)").tag(major.code)
+            TextField("搜索专业代码或名称", text: $viewModel.majorSearchText)
+                .autocorrectionDisabled()
+
+            if viewModel.majorSearchText.isEmpty {
+                if viewModel.majors.isEmpty {
+                    Text("请先选择年级").foregroundStyle(.secondary)
+                } else {
+                    Text("共 \(viewModel.majors.count) 个专业，输入代码或名称快速定位")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+            }
+
+            if !viewModel.majorSearchText.isEmpty || viewModel.selectedMajorCode.isEmpty {
+                ScrollView(.vertical, showsIndicators: true) {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(viewModel.filteredMajors) { major in
+                            Button {
+                                viewModel.selectedMajorCode = major.code
+                                viewModel.majorSearchText = "\(major.code) \(major.name)"
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("\(major.code) \(major.name)")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.primary)
+                                        Text(major.name)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if viewModel.selectedMajorCode == major.code {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(AppColors.cyan)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 4)
+
+                            if major.code != viewModel.filteredMajors.last?.code {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 200)
+            } else {
+                HStack {
+                    Text("已选择")
+                    Spacer()
+                    Text(viewModel.majorSearchText)
+                        .foregroundStyle(.secondary)
+                }
+                Button("重新选择") {
+                    viewModel.majorSearchText = ""
+                    viewModel.selectedMajorCode = ""
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(AppColors.cyan)
             }
 
             Button {
@@ -549,12 +607,31 @@ public struct SchedulerView: View {
                     description: Text("输入课程名、课号、教师或选择空段后查询")
                 )
             } else {
+                if !viewModel.availableCampusesInResults.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            FilterChip(title: "全部校区", isSelected: viewModel.candidateCampusFilter.isEmpty) {
+                                viewModel.candidateCampusFilter = ""
+                            }
+                            ForEach(viewModel.availableCampusesInResults, id: \.self) { campus in
+                                FilterChip(title: campus, isSelected: viewModel.candidateCampusFilter == campus) {
+                                    viewModel.candidateCampusFilter = campus
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 4)
+                        .padding(.bottom, 8)
+                    }
+                }
+
                 ForEach(viewModel.searchResults) { course in
                     SchedulerCourseResultRow(
                         course: course,
                         isExpanded: viewModel.expandedCourseCode == course.courseCode,
                         isLoading: viewModel.loadingDetailsCourseCode == course.courseCode,
-                        classes: viewModel.classes(for: course),
+                        classes: viewModel.classes(for: course).filter { cls in
+                            viewModel.candidateCampusFilter.isEmpty || cls.campus == viewModel.candidateCampusFilter
+                        },
                         selectionState: { teachingClass in
                             viewModel.selectionState(course: course, teachingClass: teachingClass)
                         },
@@ -641,6 +718,20 @@ public final class SchedulerViewModel {
     public var teacherName = ""
     public var selectedDay = 1
     public var selectedSectionGroup = 1
+    public var majorSearchText = ""
+    public var candidateCampusFilter = ""
+
+    public var filteredMajors: [SchedulerMajor] {
+        let text = majorSearchText.trimmed.lowercased()
+        guard !text.isEmpty else { return majors }
+        return majors.filter { $0.code.lowercased().contains(text) || $0.name.lowercased().contains(text) }
+    }
+
+    public var availableCampusesInResults: [String] {
+        let allClasses = searchResults.flatMap { detailsByCourseCode[$0.courseCode] ?? [] }
+        let campuses = Set(allClasses.map(\.campus).filter { !$0.isEmpty })
+        return Array(campuses).sorted()
+    }
 
     private let schedulerRepo: SchedulerRepository
     private let courseRepo: CourseRepository
@@ -710,6 +801,7 @@ public final class SchedulerViewModel {
     public func calendarChanged() async {
         selectedGrade = 0
         selectedMajorCode = ""
+        majorSearchText = ""
         grades = []
         majors = []
         searchResults = []
@@ -723,6 +815,7 @@ public final class SchedulerViewModel {
 
     public func gradeChanged() async {
         selectedMajorCode = ""
+        majorSearchText = ""
         majors = []
         guard selectedCalendarId != 0, selectedGrade != 0 else { return }
         await loadMajors()
@@ -1209,6 +1302,7 @@ public final class SchedulerViewModel {
         do {
             majors = try await schedulerRepo.findMajors(calendarId: selectedCalendarId, grade: selectedGrade)
             selectedMajorCode = majors.first?.code ?? ""
+            majorSearchText = ""
         } catch {
             logger.error("Failed to load scheduler majors: \(error.localizedDescription)")
         }
@@ -1220,6 +1314,7 @@ public final class SchedulerViewModel {
         error = nil
         expandedCourseCode = nil
         detailsByCourseCode = [:]
+        candidateCampusFilter = ""
         clearTimetableLookup()
         defer { isSearching = false }
 
@@ -1319,6 +1414,25 @@ public struct SchedulerScheduleEntry: Equatable, Sendable {
     public let campus: String
     public let room: String?
     public let weekText: String
+}
+
+private struct FilterChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(isSelected ? AppColors.cyan : Color(.systemGray6))
+                .foregroundStyle(isSelected ? .white : .primary)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 private struct SchedulerCourseResultRow: View {
