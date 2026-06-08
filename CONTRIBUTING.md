@@ -26,7 +26,40 @@ fix/*      ← 修复分支。从 dev 拉出，命名：fix/<scope>-<description
 4. 推送功能分支并开 PR → `dev`
 5. CI 通过后 squash merge 到 `dev`
 6. dev 积累足够改动（或到发布周期）时，开 PR → `master`
-7. master 合并后打 tag 发布 TestFlight
+7. master 合并后按下方「发布流程」打 tag 发布
+
+## 发布流程 (Release)
+
+版本历史以 GitHub Releases 的形式可视化：每个版本一个 `v<version>` tag，
+Release 正文包含**分类概要**（便于发给测试做下游验证）和**完整 commit changelog**。
+
+App 二进制由开发者在本地用 Xcode 上传到 App Store Connect；本流程只负责在
+GitHub 上记录「每个版本号做了什么」。
+
+发布步骤：
+
+1. 本地修改 `App/Info.plist`：升级 `CFBundleShortVersionString`（如 `1.2.0`）和
+   `CFBundleVersion`（构建号），提交并合入要发布的分支。
+2. 本地用 Xcode Archive 并上传同一版本到 App Store Connect 分发。
+3. 确认发布，打 tag 并推送（tag 不受分支保护限制）：
+
+   ```bash
+   scripts/release.sh          # 用 Info.plist 中的版本号打 v<version> 并推送
+   # 或显式校验：scripts/release.sh 1.2.0
+   ```
+
+   也可以在 GitHub 上手动触发：**Actions → Release → Run workflow**（自动读取
+   `App/Info.plist` 的版本号）。
+
+4. `Release` workflow 会校验 tag 与 `Info.plist` 版本一致，生成发布说明，并发布
+   GitHub Release。可在 **Actions → Release** 的运行摘要中预览同样的正文。
+
+发布说明由 `scripts/release-notes.sh` 生成（按 Conventional Commit 类型归类），
+本地可预览：
+
+```bash
+scripts/release-notes.sh 1.2.0 v1.2.0
+```
 
 ## Commit Style
 
