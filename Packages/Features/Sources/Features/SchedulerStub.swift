@@ -1285,7 +1285,9 @@ public final class SchedulerViewModel {
     }
 
     /// Run a sync check covering both selected and candidate classes.
+    /// Run a sync check covering both selected and candidate classes.
     public func syncSelectedClasses() async {
+        guard !isSyncing else { return }
         guard selectedCalendarId != 0 else {
             syncResult = nil
             unacknowledgedChangeCount = 0
@@ -1433,9 +1435,10 @@ public final class SchedulerViewModel {
             }
         }
 
+        // Always refresh the detail cache, even if no selections mutated
+        detailsByCourseCode.merge(freshData) { _, new in new }
         if didUpdate {
             persistSelectedClasses()
-            detailsByCourseCode.merge(freshData) { _, new in new }
         }
     }
 

@@ -33,7 +33,7 @@ public struct CourseChange: Identifiable, Codable, Sendable {
         self.detail = detail
         self.detectedAt = detectedAt
         self.conflictWith = conflictWith
-        self.id = "\(courseCode)|\(classCode)|\(Int(detectedAt.timeIntervalSince1970))"
+        self.id = "\(changeType.rawValue)|\(courseCode)|\(classCode)"
     }
 }
 

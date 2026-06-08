@@ -11,6 +11,8 @@ public struct SyncEngine: Sendable {
         self.repo = repo
     }
 
+    // MARK: - Checkpoint capture
+
     /// Create checkpoints from the user's selected classes.
     public func captureCheckpoint(from selectedClasses: [SchedulerSelectedClass], calendarId: Int) -> SyncSnapshot {
         let checkpoints = selectedClasses.map { selected -> SyncCheckpoint in
@@ -32,99 +34,18 @@ public struct SyncEngine: Sendable {
             )
         }
         return SyncSnapshot(
-            checkpointId: UUID().uuidString,
+            checkpointId: Self.stableCheckpointId(for: checkpoints),
             calendarId: calendarId,
             checkpoints: checkpoints,
             capturedAt: Date()
         )
     }
 
-    /// Run a sync: fetch latest data and compare against checkpoints.
-    public func sync(
-        snapshot: SyncSnapshot,
-        calendarId: Int
-    ) async -> SyncResult {
-        guard !snapshot.checkpoints.isEmpty else {
-            return SyncResult(changes: [], checkedAt: Date())
-        }
+    // MARK: - Sync
 
-        let courseCodes = Array(Set(snapshot.checkpoints.map(\.courseCode)))
-        let freshData: [String: [SchedulerTeachingClass]]
-        do {
-            freshData = try await repo.findCourseDetailsBatch(calendarId: calendarId, courseCodes: courseCodes)
-        } catch {
-            return SyncResult(changes: [], checkedAt: Date())
-        }
-
-        var changes: [CourseChange] = []
-        let now = Date()
-
-        for checkpoint in snapshot.checkpoints {
-            let classes = freshData[checkpoint.courseCode] ?? []
-            let matchingClass = classes.first { $0.code == checkpoint.classCode }
-
-            if matchingClass == nil {
-                changes.append(CourseChange(
-                    courseCode: checkpoint.courseCode,
-                    courseName: checkpoint.courseName,
-                    classCode: checkpoint.classCode,
-                    changeType: .closed,
-                    detail: "此教学班已关闭或本学期不再开设",
-                    detectedAt: now
-                ))
-                continue
-            }
-
-            guard let tc = matchingClass else { continue }
-
-            var detailParts: [String] = []
-
-            if tc.teacherNames != checkpoint.teacherNames {
-                detailParts.append("授课教师: \(checkpoint.teacherNames) → \(tc.teacherNames)")
-            }
-
-            if tc.campus != checkpoint.campus {
-                detailParts.append("校区: \(checkpoint.campus) → \(tc.campus)")
-            }
-
-            if tc.teachingLanguage != checkpoint.teachingLanguage {
-                detailParts.append("教学语言: \(checkpoint.teachingLanguage) → \(tc.teachingLanguage)")
-            }
-
-            if tc.isExclusive != checkpoint.isExclusive {
-                detailParts.append("专属状态已变更")
-            }
-
-            let newHashes = tc.arrangementInfo.map { arr in
-                "\(arr.occupyDay ?? 0)-\(arr.occupyRoom ?? "")-\(arr.occupyTime ?? [])-\(arr.occupyWeek ?? [])"
-            }
-            if newHashes != checkpoint.arrangementHashes {
-                let oldDesc = checkpoint.arrangementHashes.map { h in
-                    let parts = h.split(separator: "-")
-                    let day = Int(parts[0]) ?? 0
-                    return "周\(dayNames[safe: day] ?? "?")"
-                }.joined(separator: ", ")
-                let newDesc = newHashes.map { h in
-                    let parts = h.split(separator: "-")
-                    let day = Int(parts[0]) ?? 0
-                    return "周\(dayNames[safe: day] ?? "?")"
-                }.joined(separator: ", ")
-                detailParts.append("上课安排: \(oldDesc) → \(newDesc)")
-            }
-
-            if !detailParts.isEmpty {
-                changes.append(CourseChange(
-                    courseCode: checkpoint.courseCode,
-                    courseName: checkpoint.courseName,
-                    classCode: checkpoint.classCode,
-                    changeType: .infoChanged,
-                    detail: detailParts.joined(separator: "\n"),
-                    detectedAt: now
-                ))
-            }
-        }
-
-        return SyncResult(changes: changes, checkedAt: now)
+    /// Run a sync: fetch latest data and compare against a saved snapshot.
+    public func sync(snapshot: SyncSnapshot, calendarId: Int) async -> SyncResult {
+        await compareCheckpoints(snapshot.checkpoints, calendarId: calendarId)
     }
 
     /// Expanded sync that includes both selected and candidate (not-yet-selected) checkpoints.
@@ -133,23 +54,23 @@ public struct SyncEngine: Sendable {
         candidateCheckpoints: [SyncCheckpoint],
         calendarId: Int
     ) async -> SyncResult {
-        let allCheckpoints = selectedSnapshot.checkpoints + candidateCheckpoints
-        guard !allCheckpoints.isEmpty else {
+        await compareCheckpoints(selectedSnapshot.checkpoints + candidateCheckpoints, calendarId: calendarId)
+    }
+
+    // MARK: - Shared comparison
+
+    private func compareCheckpoints(_ checkpoints: [SyncCheckpoint], calendarId: Int) async -> SyncResult {
+        guard !checkpoints.isEmpty else {
             return SyncResult(changes: [], checkedAt: Date())
         }
 
-        let courseCodes = Array(Set(allCheckpoints.map(\.courseCode)))
-        let freshData: [String: [SchedulerTeachingClass]]
-        do {
-            freshData = try await repo.findCourseDetailsBatch(calendarId: calendarId, courseCodes: courseCodes)
-        } catch {
-            return SyncResult(changes: [], checkedAt: Date())
-        }
+        let courseCodes = Array(Set(checkpoints.map(\.courseCode)))
+        let freshData = (try? await repo.findCourseDetailsBatch(calendarId: calendarId, courseCodes: courseCodes)) ?? [:]
 
         var changes: [CourseChange] = []
         let now = Date()
 
-        for checkpoint in allCheckpoints {
+        for checkpoint in checkpoints {
             let classes = freshData[checkpoint.courseCode] ?? []
             let matchingClass = classes.first { $0.code == checkpoint.classCode }
 
@@ -167,41 +88,7 @@ public struct SyncEngine: Sendable {
 
             guard let tc = matchingClass else { continue }
 
-            var detailParts: [String] = []
-
-            if tc.teacherNames != checkpoint.teacherNames {
-                detailParts.append("授课教师: \(checkpoint.teacherNames) → \(tc.teacherNames)")
-            }
-
-            if tc.campus != checkpoint.campus {
-                detailParts.append("校区: \(checkpoint.campus) → \(tc.campus)")
-            }
-
-            if tc.teachingLanguage != checkpoint.teachingLanguage {
-                detailParts.append("教学语言: \(checkpoint.teachingLanguage) → \(tc.teachingLanguage)")
-            }
-
-            if tc.isExclusive != checkpoint.isExclusive {
-                detailParts.append("专属状态已变更")
-            }
-
-            let newHashes = tc.arrangementInfo.map { arr in
-                "\(arr.occupyDay ?? 0)-\(arr.occupyRoom ?? "")-\(arr.occupyTime ?? [])-\(arr.occupyWeek ?? [])"
-            }
-            if newHashes != checkpoint.arrangementHashes {
-                let oldDesc = checkpoint.arrangementHashes.map { h in
-                    let parts = h.split(separator: "-")
-                    let day = Int(parts[0]) ?? 0
-                    return "周\(dayNames[safe: day] ?? "?")"
-                }.joined(separator: ", ")
-                let newDesc = newHashes.map { h in
-                    let parts = h.split(separator: "-")
-                    let day = Int(parts[0]) ?? 0
-                    return "周\(dayNames[safe: day] ?? "?")"
-                }.joined(separator: ", ")
-                detailParts.append("上课安排: \(oldDesc) → \(newDesc)")
-            }
-
+            let detailParts = buildDetailParts(checkpoint: checkpoint, fresh: tc)
             if !detailParts.isEmpty {
                 changes.append(CourseChange(
                     courseCode: checkpoint.courseCode,
@@ -216,6 +103,47 @@ public struct SyncEngine: Sendable {
 
         return SyncResult(changes: changes, checkedAt: now)
     }
+
+    // MARK: - Detail comparison
+
+    /// Build human-readable change descriptions between a checkpoint and fresh teaching class data.
+    nonisolated func buildDetailParts(checkpoint: SyncCheckpoint, fresh tc: SchedulerTeachingClass) -> [String] {
+        var parts: [String] = []
+
+        if tc.teacherNames != checkpoint.teacherNames {
+            parts.append("授课教师: \(checkpoint.teacherNames) → \(tc.teacherNames)")
+        }
+        if tc.campus != checkpoint.campus {
+            parts.append("校区: \(checkpoint.campus) → \(tc.campus)")
+        }
+        if tc.teachingLanguage != checkpoint.teachingLanguage {
+            parts.append("教学语言: \(checkpoint.teachingLanguage) → \(tc.teachingLanguage)")
+        }
+        if tc.isExclusive != checkpoint.isExclusive {
+            parts.append("专属状态已变更")
+        }
+
+        let newHashes = tc.arrangementInfo.map { arr in
+            "\(arr.occupyDay ?? 0)-\(arr.occupyRoom ?? "")-\(arr.occupyTime ?? [])-\(arr.occupyWeek ?? [])"
+        }
+        if newHashes != checkpoint.arrangementHashes {
+            let oldDesc = checkpoint.arrangementHashes.compactMap { h -> String? in
+                let parts = h.split(separator: "-")
+                guard let first = parts.first, let day = Int(first) else { return nil }
+                return "周\(dayNames[safe: day] ?? "?")"
+            }.joined(separator: ", ")
+            let newDesc = newHashes.compactMap { h -> String? in
+                let parts = h.split(separator: "-")
+                guard let first = parts.first, let day = Int(first) else { return nil }
+                return "周\(dayNames[safe: day] ?? "?")"
+            }.joined(separator: ", ")
+            parts.append("上课安排: \(oldDesc) → \(newDesc)")
+        }
+
+        return parts
+    }
+
+    // MARK: - Conflict detection
 
     /// Detect time conflicts between arrangement-changed classes and the user's current selections.
     public func detectConflicts(
@@ -230,22 +158,20 @@ public struct SyncEngine: Sendable {
         )
         guard !arrangementChangedCodes.isEmpty else { return changes }
 
-        let freshData: [String: [SchedulerTeachingClass]]
-        do {
-            freshData = try await repo.findCourseDetailsBatch(
-                calendarId: calendarId,
-                courseCodes: Array(arrangementChangedCodes)
-            )
-        } catch {
-            return changes
-        }
+        let freshData = (try? await repo.findCourseDetailsBatch(
+            calendarId: calendarId,
+            courseCodes: Array(arrangementChangedCodes)
+        )) ?? [:]
 
         var updatedChanges = changes
-        // Track which changed courses we've already processed to detect bidirectional conflicts
-        let changedKeys = Set(changes.filter { $0.changeType == .infoChanged && $0.detail.contains("上课安排") }.map { "\($0.courseCode)|\($0.classCode)" })
+        let changedKeys = Set(
+            changes.filter { $0.changeType == .infoChanged && $0.detail.contains("上课安排") }
+                .map { "\($0.courseCode)|\($0.classCode)" }
+        )
         var processedChangedKeys: Set<String> = []
 
-        for (index, change) in changes.enumerated() where change.changeType == .infoChanged && change.detail.contains("上课安排") {
+        for (index, change) in changes.enumerated()
+        where change.changeType == .infoChanged && change.detail.contains("上课安排") {
             let changeKey = "\(change.courseCode)|\(change.classCode)"
             processedChangedKeys.insert(changeKey)
 
@@ -255,7 +181,6 @@ public struct SyncEngine: Sendable {
             for selected in selectedClasses {
                 let selectedKey = "\(selected.course.courseCode)|\(selected.teachingClass.code)"
                 guard selectedKey != changeKey else { continue }
-
                 guard freshClass.conflicts(with: selected.teachingClass) else { continue }
 
                 // Mark this course as conflicted
@@ -271,14 +196,16 @@ public struct SyncEngine: Sendable {
 
                 // Bidirectional: if the conflicting selected class is ALSO a changed course, mark it too
                 if changedKeys.contains(selectedKey), !processedChangedKeys.contains(selectedKey) {
-                    if let selectedIdx = updatedChanges.firstIndex(where: { "\($0.courseCode)|\($0.classCode)" == selectedKey }) {
+                    if let selectedIdx = updatedChanges.firstIndex(where: {
+                        "\($0.courseCode)|\($0.classCode)" == selectedKey
+                    }) {
                         let selChange = updatedChanges[selectedIdx]
                         updatedChanges[selectedIdx] = CourseChange(
                             courseCode: selChange.courseCode,
                             courseName: selChange.courseName,
                             classCode: selChange.classCode,
                             changeType: .conflictAfterUpdate,
-                            detail: "\(change.detail)\n\n与同样变更的课程「\(change.courseName)」冲突",
+                            detail: "\(selChange.detail)\n\n与同样变更的课程「\(change.courseName)」冲突",
                             detectedAt: selChange.detectedAt,
                             conflictWith: change.courseName
                         )
@@ -291,7 +218,29 @@ public struct SyncEngine: Sendable {
 
         return updatedChanges
     }
+
+    // MARK: - Stable IDs
+
+    /// Compute a deterministic checkpoint ID based on checkpoint content.
+    static func stableCheckpointId(for checkpoints: [SyncCheckpoint]) -> String {
+        let sorted = checkpoints.sorted {
+            $0.courseCode < $1.courseCode || ($0.courseCode == $1.courseCode && $0.classCode < $1.classCode)
+        }
+        var hasher = FixedHasher()
+        for cp in sorted {
+            hasher.combine(cp.courseCode)
+            hasher.combine(cp.classCode)
+            hasher.combine(cp.teacherNames)
+            hasher.combine(cp.campus)
+            hasher.combine(cp.teachingLanguage)
+            hasher.combine(cp.arrangementHashes)
+            hasher.combine(cp.isExclusive)
+        }
+        return hasher.finalize()
+    }
 }
+
+// MARK: - SyncStore (persistence)
 
 /// Manages persistent state for sync acknowledgments in UserDefaults.
 public struct SyncStore: Sendable {
@@ -303,7 +252,7 @@ public struct SyncStore: Sendable {
         guard let data = UserDefaults.standard.data(forKey: defaultsKey),
               let ack = try? JSONDecoder().decode(SyncAcknowledgment.self, from: data)
         else {
-            return SyncAcknowledgment(acknowledgedChangeIds: [], lastAcknowledgedCheckpointId: nil)
+            return SyncAcknowledgment()
         }
         return ack
     }
@@ -328,6 +277,37 @@ public struct SyncStore: Sendable {
             return []
         }
         return result.changes.filter { !ack.acknowledgedChangeIds.contains($0.id) }
+    }
+}
+
+// MARK: - FixedHasher (stable content-addressable hash)
+
+/// Simple non-cryptographic hash for stable content addressing.
+/// Uses FNV-1a so results are deterministic across runs.
+private struct FixedHasher {
+    private var hash: UInt64 = 14695981039346656037
+
+    mutating func combine(_ value: String) {
+        combine(Data(value.utf8))
+    }
+
+    mutating func combine(_ value: Bool) {
+        combine(value ? "1" : "0")
+    }
+
+    mutating func combine(_ value: [String]) {
+        for s in value.sorted() { combine(s) }
+    }
+
+    private mutating func combine(_ data: Data) {
+        for byte in data {
+            hash ^= UInt64(byte)
+            hash &*= 1099511628211
+        }
+    }
+
+    func finalize() -> String {
+        String(hash, radix: 36)
     }
 }
 

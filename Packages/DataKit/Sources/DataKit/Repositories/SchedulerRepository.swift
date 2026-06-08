@@ -94,8 +94,8 @@ public struct SchedulerRepository: Sendable {
     }
 
     /// Batch fetch teaching class details for multiple course codes.
-    /// Used by the sync engine to compare old vs new data efficiently.
-    public func findCourseDetailsBatch(calendarId: Int, courseCodes: [String]) async throws -> [String: [SchedulerTeachingClass]] {
+    /// Failed lookups do not abort the entire batch.
+    public func findCourseDetailsBatch(calendarId: Int, courseCodes: [String]) async -> [String: [SchedulerTeachingClass]] {
         var result: [String: [SchedulerTeachingClass]] = [:]
         for code in courseCodes {
             if let details = try? await findCourseDetails(calendarId: calendarId, courseCode: code) {
@@ -132,6 +132,8 @@ private struct PKEnvelope<T: Decodable & Sendable>: Decodable, Sendable {
     let msg: String?
     let data: T?
 }
+
+// MARK: - Request types
 
 private struct CalendarRequest: Encodable, Sendable {
     let calendarId: Int
