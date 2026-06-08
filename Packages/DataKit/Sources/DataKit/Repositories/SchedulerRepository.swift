@@ -93,6 +93,18 @@ public struct SchedulerRepository: Sendable {
         return try unwrap(response) ?? []
     }
 
+    /// Batch fetch teaching class details for multiple course codes.
+    /// Used by the sync engine to compare old vs new data efficiently.
+    public func findCourseDetailsBatch(calendarId: Int, courseCodes: [String]) async throws -> [String: [SchedulerTeachingClass]] {
+        var result: [String: [SchedulerTeachingClass]] = [:]
+        for code in courseCodes {
+            if let details = try? await findCourseDetails(calendarId: calendarId, courseCode: code) {
+                result[code] = details
+            }
+        }
+        return result
+    }
+
     public func findCoursesByTime(calendarId: Int, day: Int, section: Int) async throws -> [SchedulerCourseSummary] {
         let body = CourseTimeRequest(calendarId: calendarId, day: day, section: section)
         let response: PKEnvelope<[SchedulerCourseSummary]> = try await client.post(

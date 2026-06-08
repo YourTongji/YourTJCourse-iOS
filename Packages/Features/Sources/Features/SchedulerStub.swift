@@ -148,6 +148,7 @@ public struct SchedulerView: View {
     @State private var activeTimetableSlot: SchedulerTimetableSlot?
     @State private var showsClearConfirmation = false
     @State private var showsFavoriteImport = false
+    @State private var showSyncChanges = false
     @State private var reviewTarget: SchedulerReviewTarget?
 
     public init() {
@@ -180,6 +181,13 @@ public struct SchedulerView: View {
             .task { await viewModel.load() }
             .onAppear {
                 viewModel.refreshFavorites()
+                Task { await viewModel.syncSelectedClasses() }
+            }
+            .onChange(of: viewModel.unacknowledgedChangeCount) { _, count in
+                if count > 0 { showSyncChanges = true }
+            }
+            .sheet(isPresented: $showSyncChanges) {
+                SyncChangeSheet(viewModel: viewModel)
             }
             .onChange(of: viewModel.selectedCalendarId) { _, _ in
                 Task { await viewModel.calendarChanged() }
@@ -709,6 +717,9 @@ public final class SchedulerViewModel {
     public private(set) var loadingTimetableLookupDetailsCourseCode: String?
     public private(set) var timetableLookupExpandedCourseCode: String?
     public private(set) var favoriteCourses: [FavoriteCourse] = []
+    public private(set) var syncResult: SyncResult?
+    public private(set) var isSyncing = false
+    public private(set) var unacknowledgedChangeCount = 0
 
     public var selectedCalendarId = 0
     public var selectedGrade = 0
@@ -774,6 +785,8 @@ public final class SchedulerViewModel {
     private var hydratedClassKeys: Set<String> = []
     private var timetableLookupSlotId: String?
     private let selectedClassesStorageKey = "com.yourtj.course.scheduler.selectedClassesByCalendar"
+    private let syncEngine = SyncEngine()
+    private let syncStore = SyncStore()
 
     public init(
         schedulerRepo: SchedulerRepository = .init(),
@@ -1269,6 +1282,42 @@ public final class SchedulerViewModel {
 
     public func dismissError() {
         error = nil
+    }
+
+    /// Run a sync check on selected classes. Call this when scheduler tab appears.
+    public func syncSelectedClasses() async {
+        guard !selectedClasses.isEmpty, selectedCalendarId != 0 else {
+            syncResult = nil
+            unacknowledgedChangeCount = 0
+            return
+        }
+
+        isSyncing = true
+        defer { isSyncing = false }
+
+        let snapshot = syncEngine.captureCheckpoint(from: selectedClasses, calendarId: selectedCalendarId)
+        let result = await syncEngine.sync(snapshot: snapshot, calendarId: selectedCalendarId)
+        syncResult = result
+
+        let unacknowledged = syncStore.unacknowledgedChanges(in: result, checkpointId: snapshot.checkpointId)
+        unacknowledgedChangeCount = unacknowledged.count
+    }
+
+    /// Mark all current unacknowledged changes as seen.
+    public func acknowledgeSyncChanges() {
+        guard let result = syncResult else { return }
+        let ids = Set(result.changes.map(\.id))
+        syncStore.acknowledgeChanges(ids, checkpointId: nil)
+        unacknowledgedChangeCount = 0
+    }
+
+    /// Acknowledge changes and save the checkpoint ID to suppress future notifications for same data.
+    public func acknowledgeAndSaveSyncCheckpoint() {
+        guard let result = syncResult else { return }
+        let snapshot = syncEngine.captureCheckpoint(from: selectedClasses, calendarId: selectedCalendarId)
+        let ids = Set(result.changes.map(\.id))
+        syncStore.acknowledgeChanges(ids, checkpointId: snapshot.checkpointId)
+        unacknowledgedChangeCount = 0
     }
 
     public func scheduleEntry(day: Int, section: Int) -> SchedulerScheduleEntry? {
@@ -2418,6 +2467,71 @@ private extension Double {
 private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+// MARK: - Sync Change Sheet
+
+struct SyncChangeSheet: View {
+    let viewModel: SchedulerViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let result = viewModel.syncResult, result.hasChanges {
+                    ForEach(result.changes) { change in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(change.courseName)
+                                    .font(.headline)
+                                Spacer()
+                                changeBadge(change.changeType)
+                            }
+                            Text("教学班 \(change.classCode)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(change.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(3)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                } else {
+                    ContentUnavailableView(
+                        "暂无课程变动",
+                        systemImage: "checkmark.circle",
+                        description: Text("所有已选课程与后端数据一致")
+                    )
+                }
+            }
+            .navigationTitle("课程变动检测")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("我已了解") {
+                        viewModel.acknowledgeAndSaveSyncCheckpoint()
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func changeBadge(_ type: CourseChangeType) -> some View {
+        switch type {
+        case .closed:
+            Text("已关闭").font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 2)
+                .background(.red.opacity(0.15)).foregroundStyle(.red).clipShape(Capsule())
+        case .infoChanged:
+            Text("已变更").font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 2)
+                .background(.orange.opacity(0.15)).foregroundStyle(.orange).clipShape(Capsule())
+        case .conflictAfterUpdate:
+            Text("冲突").font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 2)
+                .background(.red.opacity(0.15)).foregroundStyle(.red).clipShape(Capsule())
+        }
     }
 }
 
