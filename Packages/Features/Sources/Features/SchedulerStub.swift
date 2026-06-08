@@ -366,100 +366,71 @@ public struct SchedulerView: View {
                 }
             }
 
-            if viewModel.selectedMajorCode.isEmpty {
-                TextField("搜索专业代码或名称", text: $viewModel.majorSearchText)
-                    .autocorrectionDisabled()
-
-                if viewModel.majorSearchText.isEmpty {
-                    if viewModel.majors.isEmpty {
-                        Text("请先选择年级").foregroundStyle(.secondary)
-                    } else {
-                        Text("共 \(viewModel.majors.count) 个专业，输入代码或名称快速定位")
+            if viewModel.hasSelectedMajor {
+                // 填入之后：展示已选专业，并提供清除入口
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("已选专业")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        ScrollView(.vertical, showsIndicators: true) {
-                            LazyVStack(alignment: .leading, spacing: 4) {
-                                ForEach(viewModel.majors) { major in
-                                    Button {
-                                        viewModel.selectedMajorCode = major.code
-                                        viewModel.majorSearchText = "\(major.code) \(major.name)"
-                                    } label: {
-                                        HStack {
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text("\(major.code) \(major.name)")
-                                                    .font(.subheadline)
-                                                    .foregroundStyle(.primary)
-                                                Text(major.name)
-                                                    .font(.caption2)
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                            Spacer()
-                                        }
-                                        .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-                                    .padding(.vertical, 6)
-                                    .padding(.horizontal, 4)
-
-                                    if major.code != viewModel.majors.last?.code {
-                                        Divider()
-                                    }
-                                }
-                            }
-                        }
-                        .frame(maxHeight: 200)
+                        Text(viewModel.selectedMajorDisplayName)
+                            .font(.subheadline.weight(.medium))
                     }
-                } else {
-                    ScrollView(.vertical, showsIndicators: true) {
-                        LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(viewModel.filteredMajors) { major in
-                                Button {
-                                    viewModel.selectedMajorCode = major.code
-                                    viewModel.majorSearchText = "\(major.code) \(major.name)"
-                                } label: {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("\(major.code) \(major.name)")
-                                                .font(.subheadline)
-                                                .foregroundStyle(.primary)
-                                            Text(major.name)
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Spacer()
-                                        if viewModel.selectedMajorCode == major.code {
-                                            Image(systemName: "checkmark")
-                                                .foregroundStyle(AppColors.cyan)
-                                        }
-                                    }
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .padding(.vertical, 6)
-                                .padding(.horizontal, 4)
-
-                                if major.code != viewModel.filteredMajors.last?.code {
-                                    Divider()
-                                }
-                            }
-                        }
+                    Spacer()
+                    Button {
+                        viewModel.clearSelectedMajor()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
                     }
-                    .frame(maxHeight: 200)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("清除已选专业")
                 }
             } else {
-                HStack {
-                    Text("已选择")
-                    Spacer()
-                    Text(viewModel.majorSearchText)
+                // 未填入：搜索 + 结果列表
+                TextField("搜索专业代码或名称", text: $viewModel.majorSearchText)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+
+                if viewModel.selectedGrade == 0 {
+                    Text("请先选择年级")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
+                } else if viewModel.majors.isEmpty {
+                    Text(viewModel.isLoadingMajorOptions ? "正在加载专业..." : "暂无专业数据")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if viewModel.majorSearchText.trimmed.isEmpty {
+                    Text("共 \(viewModel.majors.count) 个专业，输入代码或名称搜索")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if viewModel.filteredMajors.isEmpty {
+                    Text("未找到匹配「\(viewModel.majorSearchText.trimmed)」的专业")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(viewModel.filteredMajors) { major in
+                        Button {
+                            viewModel.selectMajor(major)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(major.code)
+                                    .font(.subheadline.monospacedDigit().weight(.medium))
+                                    .foregroundStyle(AppColors.cyan)
+                                Text(major.name)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                Button("重新选择") {
-                    viewModel.majorSearchText = ""
-                    viewModel.selectedMajorCode = ""
-                }
-                .buttonStyle(.plain)
-                .font(.caption)
-                .foregroundStyle(AppColors.cyan)
             }
 
             Button {
@@ -756,6 +727,29 @@ public final class SchedulerViewModel {
         let text = majorSearchText.trimmed.lowercased()
         guard !text.isEmpty else { return majors }
         return majors.filter { $0.code.lowercased().contains(text) || $0.name.lowercased().contains(text) }
+    }
+
+    public var hasSelectedMajor: Bool {
+        !selectedMajorCode.isEmpty
+    }
+
+    /// Display label for the currently selected major. Resolves the name from the
+    /// loaded list, falling back to the bare code if the list isn't available.
+    public var selectedMajorDisplayName: String {
+        if let major = majors.first(where: { $0.code == selectedMajorCode }) {
+            return "\(major.code) \(major.name)"
+        }
+        return selectedMajorCode
+    }
+
+    public func selectMajor(_ major: SchedulerMajor) {
+        selectedMajorCode = major.code
+        majorSearchText = ""
+    }
+
+    public func clearSelectedMajor() {
+        selectedMajorCode = ""
+        majorSearchText = ""
     }
 
     public var availableCampusesInResults: [String] {
@@ -1332,7 +1326,6 @@ public final class SchedulerViewModel {
 
         do {
             majors = try await schedulerRepo.findMajors(calendarId: selectedCalendarId, grade: selectedGrade)
-            selectedMajorCode = majors.first?.code ?? ""
             majorSearchText = ""
         } catch {
             logger.error("Failed to load scheduler majors: \(error.localizedDescription)")
