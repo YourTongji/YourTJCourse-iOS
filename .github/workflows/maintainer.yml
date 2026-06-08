@@ -47,7 +47,7 @@ jobs:
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      KIMI_CODING_API_KEY: ${{ secrets.KIMI_CODING_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
