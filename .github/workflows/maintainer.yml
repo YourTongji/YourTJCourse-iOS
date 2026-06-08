@@ -57,15 +57,26 @@ jobs:
       - name: Download accelerate from RCM release
         # Decouples maintainer runs from the current HEAD: every run uses the
         # last published, known-good binary from RCM's private releases.
-        # PAT_RCM needs `repo` scope on the EricSanchezok/RCM repository.
         env:
           GH_TOKEN: ${{ secrets.PAT_RCM }}
         run: |
-          gh release download \
+          echo "::group::PAT availability check"
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::PAT_RCM secret is not set. Create a PAT with read:contents on EricSanchezok/RCM and add it as PAT_RCM in the repo secrets."
+            exit 1
+          fi
+          if ! gh api repos/EricSanchezok/RCM --jq .full_name 2>/dev/null; then
+            echo "::error::PAT_RCM cannot access EricSanchezok/RCM. Check token scopes and repository access."
+            exit 1
+          fi
+          echo "Access verified for: $(gh api repos/EricSanchezok/RCM --jq .full_name)"
+          echo "::endgroup::"
+          gh release download v0.1.8 \
             --repo EricSanchezok/RCM \
             --pattern 'accelerate-x86_64-linux' \
             --output accelerate
           chmod +x accelerate
+          ls -lh accelerate
 
       - name: Configure git identity for code_change commits
         run: |
