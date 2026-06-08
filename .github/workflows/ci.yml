@@ -4,7 +4,7 @@ on:
   push:
     branches: [dev, master]
   pull_request:
-    branches: [master]
+    branches: [dev, master]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -34,6 +34,7 @@ jobs:
 
   build:
     name: Build App
+    if: ${{ github.ref_name != 'dev' }}
     runs-on: macos-15
     needs: [lint, spm-test]
     steps:
