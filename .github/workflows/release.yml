@@ -11,7 +11,9 @@ name: Release
 on:
   push:
     tags:
-      - "v*.*.*"
+      # Any version-like tag (v1, v1.2, v1.2.0, …); the verify step is the real
+      # gate. Avoid "v*.*.*" — it silently ignores 2-part versions like v1.2.
+      - "v[0-9]*"
   workflow_dispatch:
     inputs:
       version:
@@ -46,6 +48,7 @@ jobs:
             VERSION="${TAG#v}"
           else
             VERSION="${{ inputs.version }}"
+            VERSION="${VERSION#v}"   # tolerate a pasted leading "v"
             if [[ -z "$VERSION" ]]; then
               VERSION="$(scripts/plist-value.sh CFBundleShortVersionString)"
             fi
@@ -61,6 +64,18 @@ jobs:
           PLIST_VERSION="$(scripts/plist-value.sh CFBundleShortVersionString)"
           if [[ "$PLIST_VERSION" != "${{ steps.ver.outputs.version }}" ]]; then
             echo "::error::App/Info.plist version ($PLIST_VERSION) != release version (${{ steps.ver.outputs.version }}). Bump and commit App/Info.plist before releasing."
+            exit 1
+          fi
+
+      # Gate on the commit (HEAD) before any tag is created, so a dispatch from a
+      # non-master branch fails without leaving a stray tag. For a tag push, HEAD
+      # is the tagged commit.
+      - name: Ensure the commit is on master
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin master
+          if ! git merge-base --is-ancestor HEAD FETCH_HEAD; then
+            echo "::error::This commit is not on origin/master. Releases must be cut from master (its CI is already green via branch protection)."
             exit 1
           fi
 
@@ -93,7 +108,9 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --title "$TITLE" --notes-file RELEASE_NOTES.md
           else
-            gh release create "$TAG" --title "$TITLE" --notes-file RELEASE_NOTES.md --verify-tag --latest
+            # No --latest: let GitHub pick "Latest" by semver, so a hotfix on an
+            # older line (e.g. v1.1.1 after v1.2.0) doesn't steal the badge.
+            gh release create "$TAG" --title "$TITLE" --notes-file RELEASE_NOTES.md --verify-tag
           fi
 
       - name: Add notes to job summary
