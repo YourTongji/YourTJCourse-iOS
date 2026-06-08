@@ -14,6 +14,8 @@ public struct CourseChange: Identifiable, Codable, Sendable {
     public let changeType: CourseChangeType
     public let detail: String
     public let detectedAt: Date
+    /// If changeType is .conflictAfterUpdate, the name of the conflicting course.
+    public let conflictWith: String?
 
     public init(
         courseCode: String,
@@ -21,7 +23,8 @@ public struct CourseChange: Identifiable, Codable, Sendable {
         classCode: String,
         changeType: CourseChangeType,
         detail: String,
-        detectedAt: Date
+        detectedAt: Date,
+        conflictWith: String? = nil
     ) {
         self.courseCode = courseCode
         self.courseName = courseName
@@ -29,6 +32,7 @@ public struct CourseChange: Identifiable, Codable, Sendable {
         self.changeType = changeType
         self.detail = detail
         self.detectedAt = detectedAt
+        self.conflictWith = conflictWith
         self.id = "\(courseCode)|\(classCode)|\(Int(detectedAt.timeIntervalSince1970))"
     }
 }

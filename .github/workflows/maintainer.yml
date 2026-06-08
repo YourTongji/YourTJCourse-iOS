@@ -1,0 +1,108 @@
+name: Maintainer
+
+on:
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened, synchronize]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 9 * * 1'  # weekly, Monday 09:00 UTC
+
+# Each issue / PR gets its own lane. A new push or comment on the same PR
+# cancels the in-progress run so the review always runs against the latest
+# code. Schedule and manual triggers fall back to run_id so they never cancel
+# each other.
+concurrency:
+  group: maintainer-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: write
+
+env:
+  RUST_BACKTRACE: 1
+
+jobs:
+  maintain:
+    name: dispatch + run
+    # Comment-triggered runs only proceed for human @maintainer mentions.
+    if: |
+      (
+        github.event_name != 'issue_comment' &&
+        github.event_name != 'pull_request_review_comment'
+      ) ||
+      (
+        contains(github.event.comment.body, '@maintainer') &&
+        github.event.comment.user.type != 'Bot' &&
+        github.actor != 'github-actions[bot]'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      KIMI_CODING_API_KEY: ${{ secrets.KIMI_CODING_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the code_change path can branch off main cleanly.
+          fetch-depth: 0
+
+      - name: Download accelerate from RCM release
+        # Decouples maintainer runs from the current HEAD: every run uses the
+        # last published, known-good binary from RCM's private releases.
+        # PAT_RCM needs `repo` scope on the EricSanchezok/RCM repository.
+        env:
+          GH_TOKEN: ${{ secrets.PAT_RCM }}
+        run: |
+          gh release download \
+            --repo EricSanchezok/RCM \
+            --pattern 'accelerate-x86_64-linux' \
+            --output accelerate
+          chmod +x accelerate
+
+      - name: Configure git identity for code_change commits
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+
+      - name: Render template for current event
+        id: dispatch
+        working-directory: .github/maintainer
+        run: |
+          ACTION=$(jq -r '.action // ""' "$GITHUB_EVENT_PATH")
+          RENDERED=$(../../accelerate dispatch \
+            --config dispatch.toml \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --action "$ACTION" \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --verbose)
+          if [ -z "$RENDERED" ]; then
+            echo "no route matched event=$GITHUB_EVENT_NAME action=$ACTION; skipping"
+          else
+            echo "rendered=$RENDERED" >> "$GITHUB_OUTPUT"
+            echo "Rendered: $RENDERED"
+          fi
+
+      - name: Check out PR head for in-context review reads
+        if: ${{ steps.dispatch.outputs.rendered != '' && github.event_name == 'pull_request' }}
+        run: gh pr checkout ${{ github.event.pull_request.number }}
+
+      - name: Run rendered pipeline
+        if: steps.dispatch.outputs.rendered != ''
+        working-directory: .github/maintainer
+        run: ../../accelerate run "${{ steps.dispatch.outputs.rendered }}" --stream
+
+      - name: Upload rendered .rcm as audit artifact
+        if: always() && steps.dispatch.outputs.rendered != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-${{ github.event_name }}-${{ github.run_id }}
+          path: .github/maintainer/.rcm-cache/
+          retention-days: 30

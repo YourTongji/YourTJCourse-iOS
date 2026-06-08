@@ -1,0 +1,44 @@
+templates_dir = "templates"
+cache_dir = ".rcm-cache"
+
+[[route]]
+event = "issues"
+action = "opened"
+template = "issue_triage.rcm.tpl"
+fields = { REPO = "repository.full_name", ISSUE_NUMBER = "issue.number" }
+
+[[route]]
+event = "pull_request"
+action = "opened"
+template = "pr_review.rcm.tpl"
+fields = { REPO = "repository.full_name", PR_NUMBER = "pull_request.number" }
+
+[[route]]
+event = "pull_request"
+action = "synchronize"
+template = "pr_review.rcm.tpl"
+fields = { REPO = "repository.full_name", PR_NUMBER = "pull_request.number" }
+
+[[route]]
+event = "issue_comment"
+action = "created"
+template = "mention_handler.rcm.tpl"
+filter = { field = "comment.body", contains = "@maintainer" }
+fields = { REPO = "repository.full_name", TRIGGER_KIND = { literal = "issue" }, TRIGGER_NUMBER = "issue.number", COMMENT_ID = "comment.id", COMMENT_AUTHOR = "comment.user.login", COMMENT_BODY = "comment.body" }
+
+[[route]]
+event = "pull_request_review_comment"
+action = "created"
+template = "mention_handler.rcm.tpl"
+filter = { field = "comment.body", contains = "@maintainer" }
+fields = { REPO = "repository.full_name", TRIGGER_KIND = { literal = "pr" }, TRIGGER_NUMBER = "pull_request.number", COMMENT_ID = "comment.id", COMMENT_AUTHOR = "comment.user.login", COMMENT_BODY = "comment.body" }
+
+[[route]]
+event = "workflow_dispatch"
+template = "health_check.rcm.tpl"
+fields = { REPO = "repository.full_name" }
+
+[[route]]
+event = "schedule"
+template = "health_check.rcm.tpl"
+fields = { REPO = "repository.full_name" }

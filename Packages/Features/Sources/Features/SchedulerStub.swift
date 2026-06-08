@@ -1284,9 +1284,14 @@ public final class SchedulerViewModel {
         error = nil
     }
 
-    /// Run a sync check on selected classes. Call this when scheduler tab appears.
+    /// Run a sync check covering both selected and candidate classes.
     public func syncSelectedClasses() async {
-        guard !selectedClasses.isEmpty, selectedCalendarId != 0 else {
+        guard selectedCalendarId != 0 else {
+            syncResult = nil
+            unacknowledgedChangeCount = 0
+            return
+        }
+        guard !selectedClasses.isEmpty || hasCandidateDetails else {
             syncResult = nil
             unacknowledgedChangeCount = 0
             return
@@ -1296,7 +1301,23 @@ public final class SchedulerViewModel {
         defer { isSyncing = false }
 
         let snapshot = syncEngine.captureCheckpoint(from: selectedClasses, calendarId: selectedCalendarId)
-        let result = await syncEngine.sync(snapshot: snapshot, calendarId: selectedCalendarId)
+        let candidateCheckpoints = captureCandidateCheckpoints()
+        var result = await syncEngine.sync(
+            selectedSnapshot: snapshot,
+            candidateCheckpoints: candidateCheckpoints,
+            calendarId: selectedCalendarId
+        )
+
+        if result.changes.contains(where: { $0.changeType == .infoChanged && $0.detail.contains("上课安排") }) {
+            let conflictChecked = await syncEngine.detectConflicts(
+                changes: result.changes,
+                selectedClasses: selectedClasses,
+                calendarId: selectedCalendarId
+            )
+            result = SyncResult(changes: conflictChecked, checkedAt: result.checkedAt)
+        }
+
+        await applySyncUpdates(result.changes)
         syncResult = result
 
         let unacknowledged = syncStore.unacknowledgedChanges(in: result, checkpointId: snapshot.checkpointId)
@@ -1335,6 +1356,80 @@ public final class SchedulerViewModel {
             }
         }
         return nil
+    }
+
+    private var hasCandidateDetails: Bool {
+        !detailsByCourseCode.values.allSatisfy(\.isEmpty)
+    }
+
+    private func captureCandidateCheckpoints() -> [SyncCheckpoint] {
+        let courseMap = Dictionary(uniqueKeysWithValues: searchResults.map { ($0.courseCode, $0) })
+        let selectedKeys = Set(selectedClasses.map(\.id))
+        var checkpoints: [SyncCheckpoint] = []
+
+        for (courseCode, classes) in detailsByCourseCode {
+            guard let summary = courseMap[courseCode] else { continue }
+            for tc in classes {
+                let key = "\(courseCode)|\(tc.code)"
+                guard !selectedKeys.contains(key) else { continue }
+                checkpoints.append(SyncCheckpoint(
+                    courseCode: courseCode,
+                    courseName: summary.courseName,
+                    credit: summary.credit,
+                    classCode: tc.code,
+                    teacherNames: tc.teacherNames,
+                    campus: tc.campus,
+                    teachingLanguage: tc.teachingLanguage,
+                    arrangementHashes: tc.arrangementInfo.map { arr in
+                        "\(arr.occupyDay ?? 0)-\(arr.occupyRoom ?? "")-\(arr.occupyTime ?? [])-\(arr.occupyWeek ?? [])"
+                    },
+                    isExclusive: tc.isExclusive,
+                    capturedAt: Date()
+                ))
+            }
+        }
+        return checkpoints
+    }
+
+    private func applySyncUpdates(_ changes: [CourseChange]) async {
+        let infoChanged = changes.filter { $0.changeType == .infoChanged }
+        guard !infoChanged.isEmpty else { return }
+
+        let courseCodes = Array(Set(infoChanged.map(\.courseCode)))
+        let freshData: [String: [SchedulerTeachingClass]]
+        do {
+            freshData = try await schedulerRepo.findCourseDetailsBatch(
+                calendarId: selectedCalendarId,
+                courseCodes: courseCodes
+            )
+        } catch {
+            logger.error("Failed to fetch fresh data for sync apply: \(error.localizedDescription)")
+            return
+        }
+
+        var didUpdate = false
+        for change in infoChanged {
+            guard let index = selectedClasses.firstIndex(where: {
+                $0.course.courseCode == change.courseCode && $0.teachingClass.code == change.classCode
+            }) else { continue }
+
+            let freshClasses = freshData[change.courseCode] ?? []
+            guard let freshClass = freshClasses.first(where: { $0.code == change.classCode }) else { continue }
+
+            let existing = selectedClasses[index]
+            if freshClass != existing.teachingClass {
+                selectedClasses[index] = SchedulerSelectedClass(
+                    course: existing.course,
+                    teachingClass: freshClass
+                )
+                didUpdate = true
+            }
+        }
+
+        if didUpdate {
+            persistSelectedClasses()
+            detailsByCourseCode.merge(freshData) { _, new in new }
+        }
     }
 
     private var hasSearchCriteria: Bool {
