@@ -93,7 +93,13 @@ jobs:
       - name: Run rendered pipeline
         if: steps.dispatch.outputs.rendered != ''
         working-directory: .github/maintainer
-        run: ../../accelerate run "${{ steps.dispatch.outputs.rendered }}" --stream
+        run: |
+          RENDERED="${{ steps.dispatch.outputs.rendered }}"
+          if ! echo "$RENDERED" | grep -qE '^[a-zA-Z0-9._/-]+\.rcm$'; then
+            echo "::error::Rendered filename '$RENDERED' does not match safe pattern (letters, digits, dots, dashes, underscores, slashes, ending with .rcm)"
+            exit 1
+          fi
+          ../../accelerate run "$RENDERED" --stream
 
       - name: Upload rendered .rcm as audit artifact
         if: always() && steps.dispatch.outputs.rendered != ''
