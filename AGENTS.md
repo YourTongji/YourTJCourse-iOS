@@ -116,19 +116,15 @@ feature/* | fix/*  从 dev 拉出，合入 dev 后删除
 
 ## AI Maintainer (RCM)
 
-本仓库配置了基于 [RCM](https://github.com/EricSanchezok/RCM) 的 AI maintainer bot。工作流定义和 pipeline 模板位于 `.github/maintainer/`。
+本仓库配置了 AI maintainer bot。工作流定义和 pipeline 模板位于 `.github/maintainer/`。
 
 | 事件 | 触发条件 | 行为 |
 |------|----------|------|
 | Issue opened | 自动 | 分类、打标签、搜重复、发分析评论 |
 | PR opened / synchronize | 自动 | 审查代码、核对目标是否达成、发 review 评论 |
 | Issue/PR 评论含 `@maintainer` | 自动 | 智能分类意图（回答/改label/修代码），执行对应动作 |
-| 每周一 09:00 UTC | 自动 | 健康度报告 issues/PRs 分析 |
-| workflow_dispatch | 手动 | 同上 |
+| workflow_dispatch | 手动 | 健康度报告 issues/PRs 分析 |
 
-**维护者注意**：
-- 需要仓库 Secrets 设 `PAT_RCM`（`EricSanchezok/RCM` 的 read:contents PAT）和 `KIMI_CODING_API_KEY`
-- 二进制 `accelerate` 从 RCM release 下载，不在此仓库编译
 - 要修改 pipeline 行为，直接编辑 `.github/maintainer/templates/*.rcm.tpl`
 - 要调整事件路由，编辑 `.github/maintainer/dispatch.toml`
 

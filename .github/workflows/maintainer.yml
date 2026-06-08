@@ -54,18 +54,14 @@ jobs:
           # Full history so the code_change path can branch off main cleanly.
           fetch-depth: 0
 
-      - name: Download accelerate from RCM release
-        # Decouples maintainer runs from the current HEAD: every run uses the
-        # last published, known-good binary from RCM's private releases.
-        # PAT_RCM needs `repo` scope on the EricSanchezok/RCM repository.
-        env:
-          GH_TOKEN: ${{ secrets.PAT_RCM }}
+      - name: Download accelerate binary
         run: |
-          gh release download \
-            --repo EricSanchezok/RCM \
+          gh release download v0.0.1-alpha \
+            --repo ${{ github.repository }} \
             --pattern 'accelerate-x86_64-linux' \
             --output accelerate
           chmod +x accelerate
+          ls -lh accelerate
 
       - name: Configure git identity for code_change commits
         run: |
