@@ -366,55 +366,86 @@ public struct SchedulerView: View {
                 }
             }
 
-            TextField("搜索专业代码或名称", text: $viewModel.majorSearchText)
-                .autocorrectionDisabled()
+            if viewModel.selectedMajorCode.isEmpty {
+                TextField("搜索专业代码或名称", text: $viewModel.majorSearchText)
+                    .autocorrectionDisabled()
 
-            if viewModel.majorSearchText.isEmpty {
-                if viewModel.majors.isEmpty {
-                    Text("请先选择年级").foregroundStyle(.secondary)
-                } else {
-                    Text("共 \(viewModel.majors.count) 个专业，输入代码或名称快速定位")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            if !viewModel.majorSearchText.isEmpty || viewModel.selectedMajorCode.isEmpty {
-                ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(viewModel.filteredMajors) { major in
-                            Button {
-                                viewModel.selectedMajorCode = major.code
-                                viewModel.majorSearchText = "\(major.code) \(major.name)"
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("\(major.code) \(major.name)")
-                                            .font(.subheadline)
-                                            .foregroundStyle(.primary)
-                                        Text(major.name)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
+                if viewModel.majorSearchText.isEmpty {
+                    if viewModel.majors.isEmpty {
+                        Text("请先选择年级").foregroundStyle(.secondary)
+                    } else {
+                        Text("共 \(viewModel.majors.count) 个专业，输入代码或名称快速定位")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        ScrollView(.vertical, showsIndicators: true) {
+                            LazyVStack(alignment: .leading, spacing: 4) {
+                                ForEach(viewModel.majors) { major in
+                                    Button {
+                                        viewModel.selectedMajorCode = major.code
+                                        viewModel.majorSearchText = "\(major.code) \(major.name)"
+                                    } label: {
+                                        HStack {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text("\(major.code) \(major.name)")
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(.primary)
+                                                Text(major.name)
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            Spacer()
+                                        }
+                                        .contentShape(Rectangle())
                                     }
-                                    Spacer()
-                                    if viewModel.selectedMajorCode == major.code {
-                                        Image(systemName: "checkmark")
-                                            .foregroundStyle(AppColors.cyan)
+                                    .buttonStyle(.plain)
+                                    .padding(.vertical, 6)
+                                    .padding(.horizontal, 4)
+
+                                    if major.code != viewModel.majors.last?.code {
+                                        Divider()
                                     }
                                 }
-                                .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
-                            .padding(.vertical, 6)
-                            .padding(.horizontal, 4)
+                        }
+                        .frame(maxHeight: 200)
+                    }
+                } else {
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(alignment: .leading, spacing: 4) {
+                            ForEach(viewModel.filteredMajors) { major in
+                                Button {
+                                    viewModel.selectedMajorCode = major.code
+                                    viewModel.majorSearchText = "\(major.code) \(major.name)"
+                                } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("\(major.code) \(major.name)")
+                                                .font(.subheadline)
+                                                .foregroundStyle(.primary)
+                                            Text(major.name)
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        if viewModel.selectedMajorCode == major.code {
+                                            Image(systemName: "checkmark")
+                                                .foregroundStyle(AppColors.cyan)
+                                        }
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.vertical, 6)
+                                .padding(.horizontal, 4)
 
-                            if major.code != viewModel.filteredMajors.last?.code {
-                                Divider()
+                                if major.code != viewModel.filteredMajors.last?.code {
+                                    Divider()
+                                }
                             }
                         }
                     }
+                    .frame(maxHeight: 200)
                 }
-                .frame(maxHeight: 200)
             } else {
                 HStack {
                     Text("已选择")
