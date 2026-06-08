@@ -241,28 +241,51 @@ public struct SyncEngine: Sendable {
         }
 
         var updatedChanges = changes
+        // Track which changed courses we've already processed to detect bidirectional conflicts
+        let changedKeys = Set(changes.filter { $0.changeType == .infoChanged && $0.detail.contains("上课安排") }.map { "\($0.courseCode)|\($0.classCode)" })
+        var processedChangedKeys: Set<String> = []
 
         for (index, change) in changes.enumerated() where change.changeType == .infoChanged && change.detail.contains("上课安排") {
+            let changeKey = "\(change.courseCode)|\(change.classCode)"
+            processedChangedKeys.insert(changeKey)
+
             let freshClasses = freshData[change.courseCode] ?? []
             guard let freshClass = freshClasses.first(where: { $0.code == change.classCode }) else { continue }
 
             for selected in selectedClasses {
                 let selectedKey = "\(selected.course.courseCode)|\(selected.teachingClass.code)"
-                let changeKey = "\(change.courseCode)|\(change.classCode)"
                 guard selectedKey != changeKey else { continue }
 
-                if freshClass.conflicts(with: selected.teachingClass) {
-                    updatedChanges[index] = CourseChange(
-                        courseCode: change.courseCode,
-                        courseName: change.courseName,
-                        classCode: change.classCode,
-                        changeType: .conflictAfterUpdate,
-                        detail: "\(change.detail)\n\n与已选课程「\(selected.course.courseName)」时间冲突",
-                        detectedAt: change.detectedAt,
-                        conflictWith: selected.course.courseName
-                    )
-                    break
+                guard freshClass.conflicts(with: selected.teachingClass) else { continue }
+
+                // Mark this course as conflicted
+                updatedChanges[index] = CourseChange(
+                    courseCode: change.courseCode,
+                    courseName: change.courseName,
+                    classCode: change.classCode,
+                    changeType: .conflictAfterUpdate,
+                    detail: "\(change.detail)\n\n与已选课程「\(selected.course.courseName)」时间冲突",
+                    detectedAt: change.detectedAt,
+                    conflictWith: selected.course.courseName
+                )
+
+                // Bidirectional: if the conflicting selected class is ALSO a changed course, mark it too
+                if changedKeys.contains(selectedKey), !processedChangedKeys.contains(selectedKey) {
+                    if let selectedIdx = updatedChanges.firstIndex(where: { "\($0.courseCode)|\($0.classCode)" == selectedKey }) {
+                        let selChange = updatedChanges[selectedIdx]
+                        updatedChanges[selectedIdx] = CourseChange(
+                            courseCode: selChange.courseCode,
+                            courseName: selChange.courseName,
+                            classCode: selChange.classCode,
+                            changeType: .conflictAfterUpdate,
+                            detail: "\(change.detail)\n\n与同样变更的课程「\(change.courseName)」冲突",
+                            detectedAt: selChange.detectedAt,
+                            conflictWith: change.courseName
+                        )
+                    }
                 }
+
+                break
             }
         }
 
@@ -308,7 +331,7 @@ public struct SyncStore: Sendable {
     }
 }
 
-private let dayNames = ["", "一", "二", "三", "四", "五", "六", "日"]
+private let dayNames = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
 private extension Array {
     subscript(safe index: Int) -> Element? {

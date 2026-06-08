@@ -1392,10 +1392,10 @@ public final class SchedulerViewModel {
     }
 
     private func applySyncUpdates(_ changes: [CourseChange]) async {
-        let infoChanged = changes.filter { $0.changeType == .infoChanged }
-        guard !infoChanged.isEmpty else { return }
+        let changedCourses = changes.filter { $0.changeType == .infoChanged || $0.changeType == .conflictAfterUpdate }
+        guard !changedCourses.isEmpty else { return }
 
-        let courseCodes = Array(Set(infoChanged.map(\.courseCode)))
+        let courseCodes = Array(Set(changedCourses.map(\.courseCode)))
         let freshData: [String: [SchedulerTeachingClass]]
         do {
             freshData = try await schedulerRepo.findCourseDetailsBatch(
@@ -1408,10 +1408,17 @@ public final class SchedulerViewModel {
         }
 
         var didUpdate = false
-        for change in infoChanged {
+        for change in changedCourses {
             guard let index = selectedClasses.firstIndex(where: {
                 $0.course.courseCode == change.courseCode && $0.teachingClass.code == change.classCode
             }) else { continue }
+
+            if change.changeType == .conflictAfterUpdate {
+                // Deselect conflict courses (matching Web版 status=0)
+                selectedClasses.remove(at: index)
+                didUpdate = true
+                continue
+            }
 
             let freshClasses = freshData[change.courseCode] ?? []
             guard let freshClass = freshClasses.first(where: { $0.code == change.classCode }) else { continue }
