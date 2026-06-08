@@ -366,10 +366,70 @@ public struct SchedulerView: View {
                 }
             }
 
-            Picker("专业", selection: $viewModel.selectedMajorCode) {
-                Text("未选择").tag("")
-                ForEach(viewModel.majors) { major in
-                    Text("\(major.code) \(major.name)").tag(major.code)
+            if viewModel.hasSelectedMajor {
+                // 填入之后：展示已选专业，并提供清除入口
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("已选专业")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(viewModel.selectedMajorDisplayName)
+                            .font(.subheadline.weight(.medium))
+                    }
+                    Spacer()
+                    Button {
+                        viewModel.clearSelectedMajor()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("清除已选专业")
+                }
+            } else {
+                // 未填入：搜索 + 结果列表
+                TextField("搜索专业代码或名称", text: $viewModel.majorSearchText)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+
+                if viewModel.selectedGrade == 0 {
+                    Text("请先选择年级")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if viewModel.majors.isEmpty {
+                    Text(viewModel.isLoadingMajorOptions ? "正在加载专业..." : "暂无专业数据")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if viewModel.majorSearchText.trimmed.isEmpty {
+                    Text("共 \(viewModel.majors.count) 个专业，输入代码或名称搜索")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if viewModel.filteredMajors.isEmpty {
+                    Text("未找到匹配「\(viewModel.majorSearchText.trimmed)」的专业")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(viewModel.filteredMajors) { major in
+                        Button {
+                            viewModel.selectMajor(major)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(major.code)
+                                    .font(.subheadline.monospacedDigit().weight(.medium))
+                                    .foregroundStyle(AppColors.cyan)
+                                Text(major.name)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
 
@@ -549,12 +609,31 @@ public struct SchedulerView: View {
                     description: Text("输入课程名、课号、教师或选择空段后查询")
                 )
             } else {
+                if !viewModel.availableCampusesInResults.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            FilterChip(title: "全部校区", isSelected: viewModel.candidateCampusFilter.isEmpty) {
+                                viewModel.candidateCampusFilter = ""
+                            }
+                            ForEach(viewModel.availableCampusesInResults, id: \.self) { campus in
+                                FilterChip(title: campus, isSelected: viewModel.candidateCampusFilter == campus) {
+                                    viewModel.candidateCampusFilter = campus
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 4)
+                        .padding(.bottom, 8)
+                    }
+                }
+
                 ForEach(viewModel.searchResults) { course in
                     SchedulerCourseResultRow(
                         course: course,
                         isExpanded: viewModel.expandedCourseCode == course.courseCode,
                         isLoading: viewModel.loadingDetailsCourseCode == course.courseCode,
-                        classes: viewModel.classes(for: course),
+                        classes: viewModel.classes(for: course).filter { cls in
+                            viewModel.candidateCampusFilter.isEmpty || cls.campus == viewModel.candidateCampusFilter
+                        },
                         selectionState: { teachingClass in
                             viewModel.selectionState(course: course, teachingClass: teachingClass)
                         },
@@ -641,6 +720,43 @@ public final class SchedulerViewModel {
     public var teacherName = ""
     public var selectedDay = 1
     public var selectedSectionGroup = 1
+    public var majorSearchText = ""
+    public var candidateCampusFilter = ""
+
+    public var filteredMajors: [SchedulerMajor] {
+        let text = majorSearchText.trimmed.lowercased()
+        guard !text.isEmpty else { return majors }
+        return majors.filter { $0.code.lowercased().contains(text) || $0.name.lowercased().contains(text) }
+    }
+
+    public var hasSelectedMajor: Bool {
+        !selectedMajorCode.isEmpty
+    }
+
+    /// Display label for the currently selected major. Resolves the name from the
+    /// loaded list, falling back to the bare code if the list isn't available.
+    public var selectedMajorDisplayName: String {
+        if let major = majors.first(where: { $0.code == selectedMajorCode }) {
+            return "\(major.code) \(major.name)"
+        }
+        return selectedMajorCode
+    }
+
+    public func selectMajor(_ major: SchedulerMajor) {
+        selectedMajorCode = major.code
+        majorSearchText = ""
+    }
+
+    public func clearSelectedMajor() {
+        selectedMajorCode = ""
+        majorSearchText = ""
+    }
+
+    public var availableCampusesInResults: [String] {
+        let allClasses = searchResults.flatMap { detailsByCourseCode[$0.courseCode] ?? [] }
+        let campuses = Set(allClasses.map(\.campus).filter { !$0.isEmpty })
+        return Array(campuses).sorted()
+    }
 
     private let schedulerRepo: SchedulerRepository
     private let courseRepo: CourseRepository
@@ -710,6 +826,7 @@ public final class SchedulerViewModel {
     public func calendarChanged() async {
         selectedGrade = 0
         selectedMajorCode = ""
+        majorSearchText = ""
         grades = []
         majors = []
         searchResults = []
@@ -723,6 +840,7 @@ public final class SchedulerViewModel {
 
     public func gradeChanged() async {
         selectedMajorCode = ""
+        majorSearchText = ""
         majors = []
         guard selectedCalendarId != 0, selectedGrade != 0 else { return }
         await loadMajors()
@@ -1208,7 +1326,7 @@ public final class SchedulerViewModel {
 
         do {
             majors = try await schedulerRepo.findMajors(calendarId: selectedCalendarId, grade: selectedGrade)
-            selectedMajorCode = majors.first?.code ?? ""
+            majorSearchText = ""
         } catch {
             logger.error("Failed to load scheduler majors: \(error.localizedDescription)")
         }
@@ -1220,6 +1338,7 @@ public final class SchedulerViewModel {
         error = nil
         expandedCourseCode = nil
         detailsByCourseCode = [:]
+        candidateCampusFilter = ""
         clearTimetableLookup()
         defer { isSearching = false }
 
@@ -1319,6 +1438,25 @@ public struct SchedulerScheduleEntry: Equatable, Sendable {
     public let campus: String
     public let room: String?
     public let weekText: String
+}
+
+private struct FilterChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(isSelected ? AppColors.cyan : Color(.systemGray6))
+                .foregroundStyle(isSelected ? .white : .primary)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 private struct SchedulerCourseResultRow: View {

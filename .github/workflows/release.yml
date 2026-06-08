@@ -1,0 +1,100 @@
+name: Release
+
+# Publishes a GitHub Release for a version, with a categorized summary plus the
+# full commit changelog since the previous version. App binaries are uploaded to
+# App Store Connect separately (locally) — this workflow only documents versions.
+#
+# Two ways to trigger:
+#   1. Push a tag:        scripts/release.sh   (creates + pushes v<version>)
+#   2. Manual dispatch:   Actions → Release → Run workflow (reads App/Info.plist)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Marketing version without leading v (blank = read App/Info.plist)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve version and tag
+        id: ver
+        run: |
+          set -euo pipefail
+          chmod +x scripts/*.sh
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+          else
+            VERSION="${{ inputs.version }}"
+            if [[ -z "$VERSION" ]]; then
+              VERSION="$(scripts/plist-value.sh CFBundleShortVersionString)"
+            fi
+            TAG="v${VERSION}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG (version $VERSION)"
+
+      - name: Verify App/Info.plist matches the release version
+        run: |
+          set -euo pipefail
+          PLIST_VERSION="$(scripts/plist-value.sh CFBundleShortVersionString)"
+          if [[ "$PLIST_VERSION" != "${{ steps.ver.outputs.version }}" ]]; then
+            echo "::error::App/Info.plist version ($PLIST_VERSION) != release version (${{ steps.ver.outputs.version }}). Bump and commit App/Info.plist before releasing."
+            exit 1
+          fi
+
+      - name: Create tag (manual dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.ver.outputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — reusing it."
+          else
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Generate release notes
+        run: |
+          set -euo pipefail
+          scripts/release-notes.sh "${{ steps.ver.outputs.version }}" "${{ steps.ver.outputs.tag }}" > RELEASE_NOTES.md
+          echo "----- generated notes -----"
+          cat RELEASE_NOTES.md
+
+      - name: Publish / update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.ver.outputs.tag }}"
+          TITLE="YourTJ Course ${TAG}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes-file RELEASE_NOTES.md
+          else
+            gh release create "$TAG" --title "$TITLE" --notes-file RELEASE_NOTES.md --verify-tag --latest
+          fi
+
+      - name: Add notes to job summary
+        run: cat RELEASE_NOTES.md >> "$GITHUB_STEP_SUMMARY"
