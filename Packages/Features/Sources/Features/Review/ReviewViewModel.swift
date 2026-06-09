@@ -65,7 +65,17 @@ public final class ReviewViewModel {
         10000 - comment.count
     }
 
+    /// Returns true if the app is currently in maintenance mode and writes should be blocked.
+    private var isBlockedByMaintenance: Bool {
+        MaintenanceMonitor.shared.isEnabled
+    }
+
     public func submit(captchaToken: String) async {
+        if isBlockedByMaintenance {
+            error = "系统正在维护中，暂时无法提交评价"
+            return
+        }
+
         guard isValid else {
             error = "请填写评分和评价内容"
             return

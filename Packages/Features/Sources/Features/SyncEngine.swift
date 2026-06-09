@@ -38,14 +38,14 @@ public struct SyncEngine: Sendable {
                 teachingLanguage: tc.teachingLanguage,
                 arrangementHashes: arrHashes,
                 isExclusive: tc.isExclusive,
-                capturedAt: Date()
+                capturedAt: Date.now
             )
         }
         return SyncSnapshot(
             checkpointId: Self.stableCheckpointId(for: checkpoints),
             calendarId: calendarId,
             checkpoints: checkpoints,
-            capturedAt: Date()
+            capturedAt: Date.now
         )
     }
 
@@ -69,14 +69,14 @@ public struct SyncEngine: Sendable {
 
     private func compareCheckpoints(_ checkpoints: [SyncCheckpoint], calendarId: Int) async -> SyncResult {
         guard !checkpoints.isEmpty else {
-            return SyncResult(changes: [], checkedAt: Date())
+            return SyncResult(changes: [], checkedAt: Date.now)
         }
 
         let courseCodes = Array(Set(checkpoints.map(\.courseCode)))
         let freshData = (try? await repo.findCourseDetailsBatch(calendarId: calendarId, courseCodes: courseCodes)) ?? [:]
 
         var changes: [CourseChange] = []
-        let now = Date()
+        let now = Date.now
 
         for checkpoint in checkpoints {
             let classes = freshData[checkpoint.courseCode] ?? []
