@@ -28,9 +28,18 @@ struct AppearanceMenuButton: View {
                 .frame(width: 32, height: 32)
                 .background(AppColors.cyan.opacity(0.14), in: Circle())
                 .overlay(Circle().stroke(AppColors.cyan.opacity(0.25), lineWidth: 1))
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(transitionForSymbol)
         }
         .accessibilityLabel("外观模式")
         .accessibilityValue(selection.title)
+    }
+
+    /// `.symbolEffect(.replace)` on iOS 18+, `.opacity` on iOS 17.
+    private var transitionForSymbol: ContentTransition {
+        if #available(iOS 18, *) {
+            .symbolEffect(.replace)
+        } else {
+            .opacity
+        }
     }
 }
