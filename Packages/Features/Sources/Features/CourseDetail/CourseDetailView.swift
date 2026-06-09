@@ -1,7 +1,20 @@
 import SwiftUI
 import DomainKit
 import DesignSystem
-import Platform
+
+// MARK: - Navigation Destination
+
+/// Navigation value for pushing to course detail from related courses links.
+public struct CourseDetailDestination: Hashable {
+    public let courseId: Int
+    public let loadsRelatedCourses: Bool
+
+    public init(courseId: Int, loadsRelatedCourses: Bool = true) {
+        self.courseId = courseId
+        self.loadsRelatedCourses = loadsRelatedCourses
+    }
+}
+
 
 public struct CourseDetailView: View {
     @State private var viewModel: CourseDetailViewModel
@@ -338,10 +351,10 @@ public struct CourseDetailView: View {
             .padding()
             .background(.cyan.opacity(0.05))
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(
+            .overlay {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(.cyan.opacity(0.2), lineWidth: 1)
-            )
+            }
             .padding(.horizontal)
     }
 
@@ -360,7 +373,7 @@ public struct CourseDetailView: View {
                 VStack(alignment: .trailing, spacing: 4) {
                     HStack(spacing: 2) {
                         RatingView(rating: detail.rating, size: 14)
-                        Text(String(format: "%.1f", detail.rating))
+                        Text(detail.rating, format: .number.precision(.fractionLength(1)))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -390,7 +403,7 @@ public struct CourseDetailView: View {
                     .font(.headline)
                     .padding(.horizontal)
                 ForEach(related.teacherOtherCourses, id: \.id) { course in
-                    NavigationLink(destination: CourseDetailView(courseId: course.id)) {
+                    NavigationLink(value: CourseDetailDestination(courseId: course.id, loadsRelatedCourses: true)) {
                         CourseCard(
                             name: course.name,
                             code: course.code,
@@ -413,7 +426,7 @@ public struct CourseDetailView: View {
                     .padding(.horizontal)
                     .padding(.top, 8)
                 ForEach(related.sameCourseOtherTeachers, id: \.id) { course in
-                    NavigationLink(destination: CourseDetailView(courseId: course.id)) {
+                    NavigationLink(value: CourseDetailDestination(courseId: course.id, loadsRelatedCourses: true)) {
                         CourseCard(
                             name: course.name,
                             code: course.code,
@@ -480,10 +493,7 @@ public struct CourseDetailView: View {
     }
 
     private func formattedCredit(_ credit: Double) -> String {
-        if credit.rounded() == credit {
-            return String(Int(credit))
-        }
-        return String(format: "%g", credit)
+        credit.formatted(.number.precision(.fractionLength(credit == credit.rounded() ? 0 : 1)))
     }
 }
 
