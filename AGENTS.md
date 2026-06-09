@@ -13,7 +13,7 @@
 | 维度 | 选型 |
 |---|---|
 | 语言 | Swift 6（strict concurrency） |
-| UI | SwiftUI，iOS 18+（iOS 26 Liquid Glass 用 `#available` 回退） |
+| UI | SwiftUI，iOS 17+（iOS 26 Liquid Glass 用 `#available` 回退） |
 | 状态 | `@Observable` + `@Environment`，MV 模式 |
 | 异步 | Swift Concurrency（async/await、actor、`@MainActor`） |
 | 网络 | URLSession + URLCache（**零网络第三方依赖**） |
