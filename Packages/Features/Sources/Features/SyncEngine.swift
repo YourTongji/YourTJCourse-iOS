@@ -2,12 +2,20 @@ import Foundation
 import DomainKit
 import DataKit
 
+/// Provider protocol for fetching teaching class details by course code.
+/// Extracted for testability — conform `SchedulerRepository` via the extension below.
+public protocol CourseDetailProvider: Sendable {
+    func findCourseDetailsBatch(calendarId: Int, courseCodes: [String]) async -> [String: [SchedulerTeachingClass]]
+}
+
+extension SchedulerRepository: CourseDetailProvider {}
+
 /// Engine that compares current teaching class data against a saved checkpoint
 /// and produces a list of CourseChange items.
 public struct SyncEngine: Sendable {
-    private let repo: SchedulerRepository
+    private let repo: CourseDetailProvider
 
-    public init(repo: SchedulerRepository = .init()) {
+    public init(repo: CourseDetailProvider = SchedulerRepository()) {
         self.repo = repo
     }
 

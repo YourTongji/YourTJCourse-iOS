@@ -1398,16 +1398,10 @@ public final class SchedulerViewModel {
         guard !changedCourses.isEmpty else { return }
 
         let courseCodes = Array(Set(changedCourses.map(\.courseCode)))
-        let freshData: [String: [SchedulerTeachingClass]]
-        do {
-            freshData = try await schedulerRepo.findCourseDetailsBatch(
-                calendarId: selectedCalendarId,
-                courseCodes: courseCodes
-            )
-        } catch {
-            logger.error("Failed to fetch fresh data for sync apply: \(error.localizedDescription)")
-            return
-        }
+        let freshData = await schedulerRepo.findCourseDetailsBatch(
+            calendarId: selectedCalendarId,
+            courseCodes: courseCodes
+        )
 
         var didUpdate = false
         for change in changedCourses {

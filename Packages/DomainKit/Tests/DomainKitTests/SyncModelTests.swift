@@ -20,7 +20,8 @@ func stableCourseChangeId() async {
 func courseChangeIdFormat() {
     let c = CourseChange(courseCode: "CS101", courseName: "数据结构", classCode: "001",
                           changeType: .infoChanged, detail: "test", detectedAt: Date())
-    #expect(c.id == "InfoChanged|CS101|001")
+    #expect(c.id.hasPrefix("InfoChanged|CS101|001|"), "ID must start with changeType|coursecode|classcode|")
+    #expect(c.id != "InfoChanged|CS101|001", "ID must have a hash suffix")
 }
 
 @Test("SyncCheckpoint round-trip Codable")
