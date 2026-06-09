@@ -9,6 +9,9 @@
 </p>
 
 <p align="center">
+  <a href="https://testflight.apple.com/join/KkBg6quW">
+    <img alt="TestFlight" src="https://img.shields.io/badge/TestFlight-公测加入-0AB5C9?style=flat-square&logo=apple&logoColor=white">
+  </a>
   <img alt="Version" src="https://img.shields.io/badge/version-1.1.0-0AB5C9?style=flat-square">
   <img alt="Platform" src="https://img.shields.io/badge/platform-iOS%2018%2B-0AB5C9?style=flat-square&logo=apple&logoColor=white">
   <img alt="Swift" src="https://img.shields.io/badge/Swift-6.0-F05138?style=flat-square&logo=swift&logoColor=white">
@@ -19,6 +22,7 @@
 </p>
 
 <p align="center">
+  <a href="https://testflight.apple.com/join/KkBg6quW">TestFlight 公测</a> •
   <a href="#features">Features</a> •
   <a href="#architecture">Architecture</a> •
   <a href="#getting-started">Getting Started</a> •
@@ -29,7 +33,8 @@
 
 ---
 
-**YourTJ Course** 是同济大学选课社区的官方 iOS 客户端。它以 SwiftUI 原生实现，采用 Liquid Glass 设计语言，直接调用 Cloudflare Workers 后端 API，提供课程浏览、评价分享、积分钱包等功能。
+**YourTJ Course** 是同济大学选课社区的官方 iOS 客户端。它以 SwiftUI 原生实现，采用 Liquid Glass 设计语言，直接调用 Cloudflare Workers 后端 API，提供课程浏览、评价分享、积分钱包、排课模拟器等功能。
+> [立即通过 TestFlight 参与公测 →](https://testflight.apple.com/join/KkBg6quW)
 
 > **YourTJ 产品矩阵** ·
 > [Serverless（后端 API）](https://github.com/YourTongji/YourTJCourse-Serverless) ·
@@ -47,10 +52,9 @@
 | **课程详情** | 课程信息头、AI 总结卡片（含优缺点/关键词/共识/代表性评价）、Markdown 评价列表、点赞/取消、隐藏/举报、关联课程（同教师/同课号） | `✅ Stable` |
 | **评价系统** | 写/编辑评价表单、评分选择、Markdown 正文、学期/昵称选填、Captcha 集成、HMAC edit_token 编辑鉴权 | `✅ Stable` |
 | **积分钱包** | 学号+PIN 登录/注册（Credit 互通）、3 词助记词备份与恢复、远程余额/今日积分展示、Keychain 安全存储 | `✅ Stable` |
-| **排课模拟器** | 学期切换、多维检索（课名/课号/教师/校区/院系）、专业课表、空段找课、教学班展开、冲突检测、周课表网格、收藏导入（按教学班关联）、教学班级评课/评分、已选持久化 | `✅ Stable` |
+| **排课模拟器** | 学期切换、多维检索（课名/课号/教师/校区/院系）、专业课表、空段找课、教学班展开、冲突检测、周课表网格、收藏导入（按教学班关联）、教学班级评课/评分、已选持久化、同步引擎（教学班数据变更检测与冲突提示） | `✅ Stable` |
 | **公告通知** | 运行时拉取、未读弹窗（interactiveDismissDisabled）、「我已知晓」标记已读、UserDefaults 持久化 | `✅ Stable` |
 | **更多设置** | 公告列表、反馈留言板 / GitHub Issues 直达、EULA / 社区规范、关于页（含双仓库链接） | `✅ Stable` |
-| **排课 PK 数据** | 一系统 PK 数据对接 | `🚧 Planned` |
 
 ## Screenshots
 
@@ -63,8 +67,6 @@
 | ![排课检索](Screenshots/04-scheduler-results.png) | ![积分钱包](Screenshots/05-wallet.png) |
 
 ## Architecture
-
-
 
 Pure **MV** (Model-View) architecture with `@Observable`, no heavy MVVM framework.
 
