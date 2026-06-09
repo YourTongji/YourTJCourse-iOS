@@ -1,4 +1,5 @@
 import SwiftUI
+import Platform
 
 // MARK: - About View
 
