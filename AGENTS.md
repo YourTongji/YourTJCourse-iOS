@@ -114,6 +114,20 @@ feature/* | fix/*  从 dev 拉出，合入 dev 后删除
 - ❌ 引入重型框架或不必要的第三方依赖（Firebase、RxSwift、Alamofire 等）。
 - ❌ 擅自改最低 iOS 版本、增后端端点等跨端决定——先确认。
 
+## AI Maintainer (RCM)
+
+本仓库配置了 AI maintainer bot。工作流定义和 pipeline 模板位于 `.github/maintainer/`。
+
+| 事件 | 触发条件 | 行为 |
+|------|----------|------|
+| Issue opened | 自动 | 分类、打标签、搜重复、发分析评论 |
+| PR opened / synchronize | 自动 | 审查代码、核对目标是否达成、发 review 评论 |
+| Issue/PR 评论含 `@maintainer` | 自动 | 智能分类意图（回答/改label/修代码），执行对应动作 |
+| workflow_dispatch | 手动 | 健康度报告 issues/PRs 分析 |
+
+- 要修改 pipeline 行为，直接编辑 `.github/maintainer/templates/*.rcm.tpl`
+- 要调整事件路由，编辑 `.github/maintainer/dispatch.toml`
+
 ## 参考
 
 - 立项书：`../YourTJCourse-Serverless/docs/ios-app-proposal.md`

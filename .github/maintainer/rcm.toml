@@ -1,0 +1,6 @@
+[project]
+name = "YourTJCourse-iOS Maintainer"
+description = "AI-native maintainer workflow: triage issues, review PRs, and monitor project health for YourTJCourse iOS app"
+
+[env]
+GITHUB_TOKEN = "keep-in-shell-env"

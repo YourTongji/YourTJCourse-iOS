@@ -93,6 +93,18 @@ public struct SchedulerRepository: Sendable {
         return try unwrap(response) ?? []
     }
 
+    /// Batch fetch teaching class details for multiple course codes.
+    /// Failed lookups do not abort the entire batch.
+    public func findCourseDetailsBatch(calendarId: Int, courseCodes: [String]) async -> [String: [SchedulerTeachingClass]] {
+        var result: [String: [SchedulerTeachingClass]] = [:]
+        for code in courseCodes {
+            if let details = try? await findCourseDetails(calendarId: calendarId, courseCode: code) {
+                result[code] = details
+            }
+        }
+        return result
+    }
+
     public func findCoursesByTime(calendarId: Int, day: Int, section: Int) async throws -> [SchedulerCourseSummary] {
         let body = CourseTimeRequest(calendarId: calendarId, day: day, section: section)
         let response: PKEnvelope<[SchedulerCourseSummary]> = try await client.post(
@@ -120,6 +132,8 @@ private struct PKEnvelope<T: Decodable & Sendable>: Decodable, Sendable {
     let msg: String?
     let data: T?
 }
+
+// MARK: - Request types
 
 private struct CalendarRequest: Encodable, Sendable {
     let calendarId: Int
