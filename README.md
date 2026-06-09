@@ -4,16 +4,15 @@
 
 <h1 align="center">YourTJ Course</h1>
 <p align="center">
-  同济大学选课社区 · 原生 iOS 客户端<br>
-  SwiftUI + Liquid Glass · iOS 18+
+  SwiftUI + Liquid Glass · iOS 17+
 </p>
 
 <p align="center">
   <a href="https://testflight.apple.com/join/KkBg6quW">
     <img alt="TestFlight" src="https://img.shields.io/badge/TestFlight-公测加入-0AB5C9?style=flat-square&logo=apple&logoColor=white">
   </a>
-  <img alt="Version" src="https://img.shields.io/badge/version-1.1.0-0AB5C9?style=flat-square">
-  <img alt="Platform" src="https://img.shields.io/badge/platform-iOS%2018%2B-0AB5C9?style=flat-square&logo=apple&logoColor=white">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.1.1-0AB5C9?style=flat-square">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-iOS%2017%2B-0AB5C9?style=flat-square&logo=apple&logoColor=white">
   <img alt="Swift" src="https://img.shields.io/badge/Swift-6.0-F05138?style=flat-square&logo=swift&logoColor=white">
   <img alt="UI" src="https://img.shields.io/badge/UI-SwiftUI-0AB5C9?style=flat-square&logo=swift&logoColor=white">
   <img alt="Architecture" src="https://img.shields.io/badge/architecture-MV-555?style=flat-square">
@@ -105,7 +104,7 @@ Pure **MV** (Model-View) architecture with `@Observable`, no heavy MVVM framewor
 ### Prerequisites
 
 - Xcode 16+
-- iOS 18+ deployment target
+- iOS 17+ deployment target
 - (Optional) Local backend for development
 
 ### Setup
@@ -209,7 +208,7 @@ YourTJCourse-iOS/
 | Layer | Choice |
 |-------|--------|
 | Language | Swift 6 (strict concurrency) |
-| UI | SwiftUI, iOS 18+ (Liquid Glass on iOS 26) |
+| UI | SwiftUI, iOS 17+ (Liquid Glass on iOS 26+) |
 | State | `@Observable` / `@Environment` (MV) |
 | Async | Swift Concurrency (`async/await`, `actor`, `@MainActor`) |
 | Networking | URLSession (zero third-party libs) |

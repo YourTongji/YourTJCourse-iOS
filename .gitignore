@@ -38,5 +38,8 @@ fastlane/screenshots/**/*.png
 fastlane/test_output
 
 # Misc
+
+# Build benchmarks
+.build-benchmark/
 *.log
 *.swp

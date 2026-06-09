@@ -2,7 +2,7 @@ name: YourTJCourse
 options:
   bundleIdPrefix: com.yourtj
   deploymentTarget:
-    iOS: "18.0"
+    iOS: "17.0"
   xcodeVersion: "16.0"
   generateEmptyDirectories: true
   groupSortPosition: top

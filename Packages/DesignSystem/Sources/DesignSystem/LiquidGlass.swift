@@ -7,7 +7,6 @@ import SwiftUI
 ///
 /// Respects accessibility transparency and contrast settings by
 /// using an opaque background when needed.
-@available(iOS 18, *)
 public struct GlassEffectModifier: ViewModifier {
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -49,7 +48,6 @@ public struct GlassEffectModifier: ViewModifier {
 /// A view that groups children inside a shared glass backdrop using
 /// `GlassEffectContainer` on iOS 26, or individual `ultraThinMaterial`
 /// backgrounds per child on iOS 18.
-@available(iOS 18, *)
 public struct GlassContainer<Content: View>: View {
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -103,7 +101,6 @@ public struct GlassContainer<Content: View>: View {
 
 // MARK: - View Extensions
 
-@available(iOS 18, *)
 extension View {
 
     /// Wraps this view in a cyan-tinted glass backdrop.
@@ -127,7 +124,6 @@ extension View {
 
 /// Solid-background card with soft shadow.
 /// This is the standard container for content cards (courses, reviews, etc.).
-@available(iOS 18, *)
 public struct CardStyleModifier: ViewModifier {
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -150,7 +146,6 @@ public struct CardStyleModifier: ViewModifier {
 
 /// A button style mimicking the iOS 26 `.glass` and `.glassProminent` styles,
 /// with a fallback for iOS 18.
-@available(iOS 18, *)
 public struct GlassButtonStyle: ButtonStyle {
 
     public enum Style {
@@ -200,7 +195,6 @@ public struct GlassButtonStyle: ButtonStyle {
     }
 }
 
-@available(iOS 18, *)
 extension ButtonStyle where Self == GlassButtonStyle {
 
     /// A glass-styled button with thin material background.
