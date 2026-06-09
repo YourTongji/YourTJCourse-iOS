@@ -138,7 +138,7 @@ fileprivate struct SchedulerCourseReviewInfo: Equatable, Sendable {
 
     var ratingText: String {
         guard reviewCount > 0 else { return "暂无评课" }
-        return "\(ratingGrade) \(String(format: "%.1f", rating)) · \(reviewCount) 评"
+        return "\(ratingGrade) \(rating.formatted(.number.precision(.fractionLength(1)))) · \(reviewCount) 评"
     }
 }
 
