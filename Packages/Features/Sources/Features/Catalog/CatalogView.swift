@@ -30,6 +30,9 @@ public struct CatalogView: View {
                     courseList
                 }
             }
+            .navigationDestination(for: CourseDetailDestination.self) { dest in
+                CourseDetailView(courseId: dest.courseId, showsRelatedCourses: dest.loadsRelatedCourses)
+            }
             .navigationTitle("课程")
             .searchable(text: $viewModel.searchText, prompt: "搜索课程、教师、课号")
             .toolbar {
@@ -39,6 +42,7 @@ public struct CatalogView: View {
                     } label: {
                         Image(systemName: "line.3.horizontal.decrease.circle")
                     }
+                    .accessibilityLabel("筛选")
                 }
             }
             .sheet(isPresented: $showFilter) {
