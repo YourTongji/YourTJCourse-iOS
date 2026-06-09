@@ -4,8 +4,7 @@
 
 <h1 align="center">YourTJ Course</h1>
 <p align="center">
-  同济大学选课社区 · 原生 iOS 客户端<br>
-  SwiftUI + Liquid Glass · iOS 18+
+  SwiftUI + Liquid Glass · iOS 17+
 </p>
 
 <p align="center">
