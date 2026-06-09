@@ -40,6 +40,7 @@ struct RootView: View {
     @State private var startupFinished = false
     @AppStorage(AppAppearancePreference.storageKey) private var appearancePreferenceRawValue =
         AppAppearancePreference.system.rawValue
+    @State private var monitor = MaintenanceMonitor.shared
 
     var body: some View {
         Group {
@@ -55,8 +56,72 @@ struct RootView: View {
                 .transition(.opacity)
             }
         }
+        .overlay {
+            if startupFinished, monitor.isEnabled {
+                midSessionMaintenanceOverlay
+            }
+        }
+        .onAppear {
+            Task { await MaintenanceMonitor.shared.check() }
+            MaintenanceMonitor.shared.startPolling()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            Task { await MaintenanceMonitor.shared.check() }
+            MaintenanceMonitor.shared.startPolling()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+            MaintenanceMonitor.shared.stopPolling()
+        }
         .preferredColorScheme(AppAppearancePreference.resolve(appearancePreferenceRawValue).colorScheme)
         .animation(.default, value: startupFinished)
+        .animation(.default, value: monitor.isEnabled)
+    }
+
+    @ViewBuilder
+    private var midSessionMaintenanceOverlay: some View {
+        ZStack {
+            Color(.systemBackground).opacity(0.85)
+                .ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                Image(systemName: "wrench.and.screwdriver.fill")
+                    .font(.system(size: 48))
+                    .foregroundStyle(.cyan)
+
+                Text(monitor.config?.title ?? "系统维护中")
+                    .font(.title)
+                    .bold()
+
+                if let message = monitor.config?.message {
+                    Text(message)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                }
+
+                if let downtime = monitor.config?.estimatedDowntime {
+                    Label(downtime, systemImage: "clock.fill")
+                        .font(.headline)
+                        .foregroundStyle(.cyan)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 16)
+                        .background(.cyan.opacity(0.12))
+                        .clipShape(Capsule())
+                }
+
+                Button(action: {
+                    Task { await MaintenanceMonitor.shared.check() }
+                }) {
+                    Label("刷新状态", systemImage: "arrow.clockwise")
+                        .font(.subheadline)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.cyan)
+                .padding(.top, 8)
+            }
+            .padding()
+        }
     }
 }
 

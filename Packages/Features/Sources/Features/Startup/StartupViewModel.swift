@@ -86,6 +86,24 @@ public final class StartupViewModel {
         }
     }
 
+    /// Re-fetches the runtime state while on the maintenance screen.
+    /// Resolves to `.captcha` if maintenance has ended, or updates
+    /// the stored maintenance config in-place.
+    public func refreshRuntimeState() async {
+        do {
+            let state = try await settingsRepo.getRuntimeState()
+            announcements = state.announcements
+            if state.maintenance.enabled {
+                phase = .maintenance(maintenance: state.maintenance.config)
+            } else {
+                phase = .captcha
+            }
+        } catch {
+            logger.error("Runtime state refresh failed: \(error.localizedDescription)")
+            // Remain on the maintenance screen with existing config.
+        }
+    }
+
     private func enterMaintenanceModeAfterBypass() async {
         do {
             let state = try await settingsRepo.getRuntimeState()

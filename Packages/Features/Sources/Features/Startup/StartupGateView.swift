@@ -31,7 +31,7 @@ public struct StartupGateView: View {
                 Spacer()
 
             case .maintenance(let config):
-                MaintenanceContentView(config: config)
+                MaintenanceContentView(config: config, onRefresh: { Task { await viewModel.refreshRuntimeState() } })
 
             case .captcha:
                 CaptchaContent(onVerify: { token in
@@ -116,9 +116,15 @@ private struct CaptchaContent: View {
 
 // MARK: - Maintenance Content
 
-/// Displays maintenance mode information with the app icon.
+/// Displays maintenance mode information with the app icon,
 private struct MaintenanceContentView: View {
     let config: MaintenanceConfig?
+    let onRefresh: (() -> Void)?
+
+    init(config: MaintenanceConfig?, onRefresh: (() -> Void)? = nil) {
+        self.config = config
+        self.onRefresh = onRefresh
+    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -141,9 +147,13 @@ private struct MaintenanceContentView: View {
             }
 
             if let downtime = config?.estimatedDowntime {
-                Label(downtime, systemImage: "clock")
-                    .font(AppTypography.caption)
-                    .foregroundStyle(AppColors.textSecondary)
+                Label(downtime, systemImage: "clock.fill")
+                    .font(.headline)
+                    .foregroundStyle(AppColors.cyan)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 16)
+                    .background(.cyan.opacity(0.12))
+                    .clipShape(Capsule())
             }
 
             if let progress = config?.progress, !progress.isEmpty {
@@ -171,6 +181,15 @@ private struct MaintenanceContentView: View {
                 Text("更新于 \(lastUpdated)")
                     .font(AppTypography.smallLabel)
                     .foregroundStyle(AppColors.textSecondary)
+            }
+
+            if let onRefresh {
+                Button(action: { onRefresh() }) {
+                    Label("刷新状态", systemImage: "arrow.clockwise")
+                        .font(.subheadline)
+                }
+                .buttonStyle(.glassProminent)
+                .padding(.top, 8)
             }
 
             Spacer()
