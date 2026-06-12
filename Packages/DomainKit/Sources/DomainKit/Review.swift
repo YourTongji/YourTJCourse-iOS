@@ -122,9 +122,3 @@ public struct Review: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
-private extension String {
-    var nonEmptyTrimmed: String? {
-        let value = trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
-    }
-}

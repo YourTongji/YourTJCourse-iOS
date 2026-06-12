@@ -491,7 +491,7 @@ private extension Sequence where Element: Hashable {
     }
 }
 
-private extension String {
+extension String {
     var nonEmptyTrimmed: String? {
         let value = trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
