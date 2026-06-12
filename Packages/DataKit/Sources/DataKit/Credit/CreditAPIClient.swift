@@ -53,6 +53,12 @@ public struct CreditAPIClient: Sendable {
         return try await get("/api/integration/jcourse/summary", query: items)
     }
 
+    public func fetchTransactionHistory(userHash: String, page: Int = 1, limit: Int = 20) async throws -> PaginatedResponse<WalletTransaction> {
+        let encoded = userHash.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userHash
+        let query = [URLQueryItem(name: "page", value: String(page)), URLQueryItem(name: "limit", value: String(limit))]
+        return try await get("/api/transaction/history/\(encoded)", query: query)
+    }
+
     private func get<T: Decodable & Sendable>(
         _ path: String,
         query items: [URLQueryItem] = []

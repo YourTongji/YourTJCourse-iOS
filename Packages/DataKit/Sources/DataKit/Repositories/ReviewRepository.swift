@@ -139,6 +139,14 @@ public struct ReviewRepository: Sendable {
         let body = ReportRequest(reason: reason.rawValue, clientId: clientId)
         return try await client.post("/api/review/\(reviewId)/report", body: body)
     }
+
+    // MARK: - My Reviews
+
+    /// Fetches all reviews authored by the given wallet user.
+    public func getMyReviews(walletUserHash: String) async throws -> [MyReviewEntry] {
+        let items = [URLQueryItem(name: "walletUserHash", value: walletUserHash)]
+        return try await client.get("/api/reviews/mine", query: items)
+    }
 }
 
 // MARK: - Request Types (private)
