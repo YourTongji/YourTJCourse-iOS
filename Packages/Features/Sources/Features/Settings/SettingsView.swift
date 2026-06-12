@@ -75,6 +75,19 @@ public struct SettingsView: View {
 
                 }
 
+                // Content Section
+                Section("内容") {
+                    Button(action: { viewModel.showMyReviews = true }) {
+                        HStack {
+                            Label("我的评价", systemImage: "text.bubble")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+
                 // Legal Section (App Store Compliance)
                 Section("法律") {
                     Button(action: { viewModel.showEULA = true }) {
@@ -135,6 +148,9 @@ public struct SettingsView: View {
             }
             .sheet(isPresented: $viewModel.showAbout) {
                 AboutView()
+            }
+            .sheet(isPresented: $viewModel.showMyReviews) {
+                MyReviewsView()
             }
         }
     }

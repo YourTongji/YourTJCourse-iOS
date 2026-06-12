@@ -19,6 +19,7 @@ public final class ReviewViewModel {
     public private(set) var error: String?
     public private(set) var success = false
     public private(set) var successMessage: String?
+    public private(set) var creditReward = false
     public private(set) var needsCaptcha = true
 
     let courseId: Int
@@ -90,7 +91,8 @@ public final class ReviewViewModel {
                     walletUserHash: wallet?.userHash
                 )
 
-                var message = "评价提交成功"
+                creditReward = false
+                var message = "评价发布成功！"
                 if let reviewId = response.reviewId, let wallet {
                     let token = HMACHelper.editToken(
                         reviewId: reviewId, userSecret: wallet.userSecret)
@@ -100,6 +102,9 @@ public final class ReviewViewModel {
                             editToken: token,
                             walletUserHash: wallet.userHash
                         )
+                        if tokenResponse.creditReward?.ok == true {
+                            creditReward = true
+                        }
                         message = successMessage(for: tokenResponse.creditReward)
                     } catch {
                         logger.error("Failed to bind edit token: \(error.localizedDescription)")
@@ -148,6 +153,7 @@ public final class ReviewViewModel {
 
     public func dismissSuccess() {
         successMessage = nil
+        creditReward = false
     }
 
     private var normalizedSemester: String {
