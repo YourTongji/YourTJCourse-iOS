@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Observation
 import DomainKit
 import DataKit
@@ -18,6 +19,9 @@ public final class CourseDetailViewModel {
     public private(set) var hiddenReviewIds: Set<Int>
     public private(set) var togglingLikeReviewIds: Set<Int> = []
     public private(set) var isFavorite = false
+#if os(iOS)
+    public private(set) var shareImage: UIImage?
+#endif
 
     let courseId: Int
     /// When false, the "same teacher / same course other teachers" related section
@@ -172,6 +176,20 @@ public final class CourseDetailViewModel {
         guard let courseDetail else { return }
         isFavorite = favoriteStore.toggle(FavoriteCourse(course: courseDetail))
     }
+
+#if os(iOS)
+    public func prepareShareImage(for review: Review, courseDetail: CourseDetail) {
+        let content = ReviewShareImageView(review: review, courseDetail: courseDetail)
+            .frame(width: 640)
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 3.0
+        shareImage = renderer.uiImage
+    }
+
+    public func clearShareImage() {
+        shareImage = nil
+    }
+#endif
 
     private func updateReview(_ review: Review) {
         guard let detail = courseDetail else {

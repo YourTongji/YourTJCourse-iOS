@@ -1,6 +1,7 @@
 import SwiftUI
 import DomainKit
 import DesignSystem
+import Platform
 
 // MARK: - Navigation Destination
 
@@ -110,6 +111,16 @@ public struct CourseDetailView: View {
         } message: {
             Text(reportMessage ?? "")
         }
+#if os(iOS)
+        .sheet(isPresented: Binding<Bool>(
+            get: { viewModel.shareImage != nil },
+            set: { if !$0 { viewModel.clearShareImage() } }
+        )) {
+            if let image = viewModel.shareImage {
+                ShareSheet(items: [image])
+            }
+        }
+#endif
     }
 
     @ViewBuilder
@@ -169,7 +180,14 @@ public struct CourseDetailView: View {
                                 onReport: {
                                     selectedReviewId = review.id
                                     showReportSheet = true
+                                },
+#if os(iOS)
+                                onShare: {
+                                    if let courseDetail = viewModel.courseDetail {
+                                        viewModel.prepareShareImage(for: review, courseDetail: courseDetail)
+                                    }
                                 }
+#endif
                             )
                         }
                     }
@@ -507,6 +525,7 @@ struct ReviewCard: View {
     let onEdit: () -> Void
     let onHide: () -> Void
     let onReport: () -> Void
+    let onShare: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -588,6 +607,19 @@ struct ReviewCard: View {
                     .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+
+                if let onShare {
+                    Button(action: onShare) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.caption)
+                            Text("分享")
+                                .font(.caption)
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
         .cardStyle()
