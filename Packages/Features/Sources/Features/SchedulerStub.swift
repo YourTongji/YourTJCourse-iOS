@@ -1873,6 +1873,96 @@ private struct SchedulerSlotSheet: View {
     let onDismiss: () -> Void
     @State private var selectedPage: SchedulerSlotSheetPage = .candidates
     @State private var reviewTarget: SchedulerReviewTarget?
+    @State private var ratingFilter: String = ""
+    @State private var campusFilter: String = ""
+    @State private var dayFilter: Int? = nil
+    private var currentSelectedClass: SchedulerSelectedClass? {
+        viewModel.selectedClass(day: slot.day, section: slot.section)
+    }
+    private var unfilteredCandidates: [SchedulerClassCandidate] {
+        viewModel.loadedCandidateClasses(
+            day: slot.day,
+            section: slot.section,
+            excluding: currentSelectedClass
+        )
+    }
+    private var availableCampuses: [String] {
+        let campuses = Set(unfilteredCandidates.map(\.teachingClass.campus))
+            .filter { !$0.isEmpty }
+        return Array(campuses).sorted()
+    }
+    private var availableDays: [Int] {
+        let days = Set(
+            unfilteredCandidates.flatMap { candidate in
+                candidate.teachingClass.arrangementInfo.compactMap(\.occupyDay)
+            }
+        )
+        return Array(days).sorted()
+    }
+    private var hasActiveFilters: Bool {
+        !ratingFilter.isEmpty || !campusFilter.isEmpty || dayFilter != nil
+    }
+    private var filteredCandidates: [SchedulerClassCandidate] {
+        unfilteredCandidates.filter { candidate in
+            if !campusFilter.isEmpty, candidate.teachingClass.campus != campusFilter { return false }
+            if !ratingFilter.isEmpty {
+                guard let info = viewModel.reviewInfo(course: candidate.course, teachingClass: candidate.teachingClass) else { return false }
+                if !allowedGradesForFilter(ratingFilter).contains(info.ratingGrade) { return false }
+            }
+            if let day = dayFilter, !candidate.teachingClass.arrangementInfo.contains(where: { $0.occupyDay == day }) { return false }
+            return true
+        }
+    }
+    private func allowedGradesForFilter(_ filter: String) -> Set<String> {
+        switch filter {
+        case "推荐+": return ["优秀", "推荐"]
+        case "中等+": return ["优秀", "推荐", "中等"]
+        case "谨慎": return ["谨慎"]
+        default: return []
+        }
+    }
+    private func dayName(_ day: Int) -> String {
+        ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"][safe: day] ?? "未定"
+    }
+    private var ratingFilterRow: some View {
+        Picker("评分筛选", selection: $ratingFilter) {
+            Text("全部").tag("")
+            Text("推荐+").tag("推荐+")
+            Text("中等+").tag("中等+")
+            Text("谨慎").tag("谨慎")
+        }
+        .pickerStyle(.segmented)
+    }
+    private var campusFilterRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                FilterChip(title: "全部校区", isSelected: campusFilter.isEmpty) {
+                    campusFilter = ""
+                }
+                ForEach(availableCampuses, id: \.self) { campus in
+                    FilterChip(title: campus, isSelected: campusFilter == campus) {
+                        campusFilter = campus
+                    }
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+    private var dayFilterRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                FilterChip(title: "全部星期", isSelected: dayFilter == nil) {
+                    dayFilter = nil
+                }
+                ForEach(availableDays, id: \.self) { day in
+                    FilterChip(title: dayName(day), isSelected: dayFilter == day) {
+                        dayFilter = day
+                    }
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -1888,6 +1978,18 @@ private struct SchedulerSlotSheet: View {
                             }
                         }
                         .pickerStyle(.segmented)
+                    }
+
+                    if selectedPage == .candidates {
+                        Section {
+                            ratingFilterRow
+                            if availableCampuses.count > 1 {
+                                campusFilterRow
+                            }
+                            if availableDays.count > 1 {
+                                dayFilterRow
+                            }
+                        }
                     }
 
                     switch selectedPage {
@@ -1935,14 +2037,24 @@ private struct SchedulerSlotSheet: View {
     }
 
     private func loadedCandidateSection(replacing selectedClass: SchedulerSelectedClass?) -> some View {
-        let candidates = viewModel.loadedCandidateClasses(
-            day: slot.day,
-            section: slot.section,
-            excluding: selectedClass
-        )
+        let candidates = filteredCandidates
+        let headerTitle = selectedClass == nil ? "该时段候选课程" : "可替换候选课程"
 
-        return Section(selectedClass == nil ? "该时段候选课程" : "可替换候选课程") {
-            if candidates.isEmpty {
+        return Section {
+            if candidates.isEmpty && hasActiveFilters {
+                VStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.title)
+                        .foregroundStyle(.secondary)
+                    Text("没有匹配的课程")
+                        .font(.headline)
+                    Text("当前筛选条件下没有候选课程，请调整筛选条件")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 32)
+            } else if candidates.isEmpty {
                 ContentUnavailableView(
                     selectedClass == nil ? "暂无候选课程" : "暂无可替换候选",
                     systemImage: "calendar.badge.exclamationmark",
@@ -1993,6 +2105,22 @@ private struct SchedulerSlotSheet: View {
                         }
                     )
                 }
+            }
+        } header: {
+            if hasActiveFilters {
+                HStack {
+                    Text(headerTitle)
+                    Spacer()
+                    Text("\(candidates.count)/\(unfilteredCandidates.count)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(AppColors.cyan.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+            } else {
+                Text(headerTitle)
             }
         }
     }
