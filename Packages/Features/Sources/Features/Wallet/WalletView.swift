@@ -299,6 +299,14 @@ public struct WalletView: View {
                 }
             }
 
+            Section("积分流水") {
+                NavigationLink {
+                    WalletTransactionView(userHash: userHash, viewModel: viewModel)
+                } label: {
+                    Label("查看流水", systemImage: "list.bullet.rectangle")
+                }
+            }
+
             Section("安全") {
                 Button(role: .destructive) {
                     showingDeleteConfirmation = true
