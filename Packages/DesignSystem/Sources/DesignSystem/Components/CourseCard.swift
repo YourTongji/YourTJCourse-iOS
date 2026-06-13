@@ -80,7 +80,7 @@ public struct CourseCard: View {
                     .foregroundStyle(AppColors.textSecondary)
             }
 
-            // Footer: credit + semester tags
+            // Footer: credit + compact semester tags
             HStack {
                 Label("\(credit, specifier: "%.1f") 学分", systemImage: "book.closed")
                     .font(AppTypography.smallLabel)
@@ -88,18 +88,89 @@ public struct CourseCard: View {
 
                 Spacer()
 
-                HStack(spacing: 4) {
-                    ForEach(semesterTags.prefix(3), id: \.self) { tag in
-                        SemesterTag(label: tag)
-                    }
-                    if semesterTags.count > 3 {
-                        Text("+\(semesterTags.count - 3)")
-                            .font(AppTypography.smallLabel)
-                            .foregroundStyle(AppColors.textSecondary)
+                if !visibleSemesterTags.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(visibleSemesterTags, id: \.self) { semesterTag in
+                            SemesterTag(label: semesterTag)
+                        }
+
+                        if hiddenSemesterTagCount > 0 {
+                            Text("+\(hiddenSemesterTagCount)")
+                                .font(AppTypography.smallLabel)
+                                .foregroundStyle(AppColors.textSecondary)
+                                .lineLimit(1)
+                        }
                     }
                 }
             }
         }
+    }
+
+    private var visibleSemesterTags: [String] {
+        Array(compactSemesterTags.prefix(3))
+    }
+
+    private var hiddenSemesterTagCount: Int {
+        max(0, compactSemesterTags.count - visibleSemesterTags.count)
+    }
+
+    private var compactSemesterTags: [String] {
+        var seenTags: Set<String> = []
+        return sortedSemesterTags.compactMap { semester in
+            let compactLabel = Self.compactSemesterLabel(semester)
+            guard seenTags.insert(compactLabel).inserted else { return nil }
+            return compactLabel
+        }
+    }
+
+    private var sortedSemesterTags: [String] {
+        Array(Set(semesterTags.map { $0.trimmed }.filter { !$0.isEmpty })).sorted(by: >)
+    }
+
+    private static func compactSemesterLabel(_ semester: String) -> String {
+        guard let parsedSemester = parseSemester(semester) else {
+            return semester.trimmed
+        }
+
+        switch parsedSemester.term {
+        case 1:
+            return "\(twoDigitYear(parsedSemester.startYear)) 秋"
+        case 2:
+            return "\(twoDigitYear(parsedSemester.endYear)) 春"
+        case 3:
+            return "\(twoDigitYear(parsedSemester.endYear)) 夏"
+        default:
+            return semester.trimmed
+        }
+    }
+
+    private static func parseSemester(_ semester: String) -> (startYear: Int, endYear: Int, term: Int)? {
+        let numbers = semester
+            .split(whereSeparator: { !$0.isNumber })
+            .compactMap { Int($0) }
+        guard numbers.count >= 2, numbers[0] > 1900, numbers[1] > 1900 else { return nil }
+
+        let numericTerm = numbers.dropFirst(2).first { (1...3).contains($0) }
+        guard let term = numericTerm ?? chineseTerm(in: semester) else { return nil }
+        return (startYear: numbers[0], endYear: numbers[1], term: term)
+    }
+
+    private static func chineseTerm(in semester: String) -> Int? {
+        if semester.contains("第一") || semester.contains("秋") {
+            return 1
+        }
+        if semester.contains("第二") || semester.contains("春") {
+            return 2
+        }
+        if semester.contains("第三") || semester.contains("夏") || semester.contains("短学期") {
+            return 3
+        }
+        return nil
+    }
+
+    private static func twoDigitYear(_ year: Int) -> String {
+        let value = year % 100
+        return value < 10 ? "0\(value)" : "\(value)"
     }
 }
 
@@ -114,7 +185,7 @@ public struct CourseCard: View {
         rating: 4.5,
         reviewCount: 128,
         credit: 5.0,
-        semesterTags: ["2024-2025-1", "2023-2024-2", "2023-2024-1"]
+        semesterTags: ["2026-2027学年 第一学期", "2025-2026学年 第二学期", "2025-2026-1"]
     )
     .cardStyle()
     .padding()
@@ -130,9 +201,15 @@ public struct CourseCard: View {
         rating: 0,
         reviewCount: 0,
         credit: 4.0,
-        semesterTags: ["2024-2025-1"]
+        semesterTags: ["2024-2025学年 第一学期"]
     )
     .cardStyle()
     .padding()
     .background(AppColors.background)
+}
+
+private extension String {
+    var trimmed: String {
+        trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }

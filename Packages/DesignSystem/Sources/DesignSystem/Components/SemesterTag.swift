@@ -20,6 +20,7 @@ public struct SemesterTag: View {
         Text(label)
             .font(AppTypography.smallLabel)
             .foregroundStyle(AppColors.cyanDark)
+            .lineLimit(1)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(
