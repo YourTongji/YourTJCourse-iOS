@@ -15,7 +15,6 @@ public final class SettingsViewModel {
     public var showCommunityGuidelines = false
     public var showFeedback = false
     public var showAbout = false
-    public var showMyReviews = false
 
     private let settingsRepo: SettingsRepository
     private let logger = AppLogger(category: "Settings")

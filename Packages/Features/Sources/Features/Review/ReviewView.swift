@@ -6,12 +6,27 @@ import Platform
 public struct ReviewView: View {
     @State private var viewModel: ReviewViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var showCaptcha = false
     @State private var showToast = false
+    private let onCompletion: (() -> Void)?
 
-    public init(courseId: Int, existingReview: Review? = nil) {
+    public init(
+        courseId: Int,
+        courseDetail: CourseDetail? = nil,
+        existingReview: Review? = nil,
+        localReviewEntry: MyReviewEntry? = nil,
+        onCompletion: (() -> Void)? = nil
+    ) {
+        self.onCompletion = onCompletion
         self._viewModel = State(
-            initialValue: ReviewViewModel(courseId: courseId, existingReview: existingReview))
+            initialValue: ReviewViewModel(
+                courseId: courseId,
+                courseDetail: courseDetail,
+                existingReview: existingReview,
+                localReviewEntry: localReviewEntry
+            )
+        )
     }
 
     public var body: some View {
@@ -157,6 +172,7 @@ public struct ReviewView: View {
                     try? await Task.sleep(for: .seconds(2))
                     withAnimation { showToast = false }
                     try? await Task.sleep(for: .milliseconds(350))
+                    onCompletion?()
                     dismiss()
                 }
             }
@@ -172,19 +188,17 @@ public struct ReviewView: View {
                 .font(.title3)
                 .foregroundStyle(.cyan)
             VStack(alignment: .leading, spacing: 2) {
-                Text("评价发布成功！")
+                Text(viewModel.successMessage ?? "评价提交成功")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
-                if viewModel.creditReward {
-                    Text("+10 小济元")
-                        .font(.caption)
-                        .foregroundStyle(.cyan)
-                }
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
         }
         .padding()
-        .background(.regularMaterial)
+        .background {
+            toastBackground
+        }
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay {
             RoundedRectangle(cornerRadius: 14)
@@ -193,6 +207,15 @@ public struct ReviewView: View {
         .shadow(color: .black.opacity(0.1), radius: 12, y: 4)
         .padding(.horizontal, 20)
         .padding(.top, 8)
+    }
+
+    @ViewBuilder
+    private var toastBackground: some View {
+        if reduceTransparency {
+            AppColors.accessibleCardBackground(reduceTransparency: true)
+        } else {
+            Rectangle().fill(.regularMaterial)
+        }
     }
 
     // MARK: - Helpers

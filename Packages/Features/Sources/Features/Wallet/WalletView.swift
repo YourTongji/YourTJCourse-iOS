@@ -1,14 +1,16 @@
 import SwiftUI
 import DesignSystem
+import DomainKit
 
 public struct WalletView: View {
     @State private var viewModel = WalletViewModel()
     @State private var showingDeleteConfirmation = false
+    @State private var navigationPath = NavigationPath()
 
     public init() {}
 
     public var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             Group {
                 switch viewModel.phase {
                 case .checking:
@@ -55,6 +57,22 @@ public struct WalletView: View {
                 Button("取消", role: .cancel) {}
             } message: {
                 Text("删除后将无法在本机继续编辑已用此钱包发表的评价。请确认已备份助记词。")
+            }
+            .navigationDestination(for: CourseDetailDestination.self) { destination in
+                CourseDetailView(
+                    courseId: destination.courseId,
+                    showsRelatedCourses: destination.loadsRelatedCourses
+                )
+            }
+            .navigationDestination(for: WalletDestination.self) { destination in
+                switch destination {
+                case .transactions:
+                    WalletTransactionView(userHash: userHash, viewModel: viewModel)
+                case .myReviews:
+                    MyReviewsView(onSelectReview: showReviewDetail)
+                case .reviewDetail(let entry):
+                    MyReviewDetailView(entry: entry)
+                }
             }
         }
     }
@@ -109,6 +127,12 @@ public struct WalletView: View {
                     viewModel.startRestore()
                 } label: {
                     Label("导入已有 3 词助记词", systemImage: "square.and.arrow.down")
+                }
+            }
+
+            Section("评价") {
+                NavigationLink(value: WalletDestination.myReviews) {
+                    Label("我的评价", systemImage: "text.bubble")
                 }
             }
         }
@@ -218,7 +242,7 @@ public struct WalletView: View {
             }
             .buttonStyle(.appPrimaryAction)
             .padding(.horizontal, 40)
-            .disabled(viewModel.isProcessing || viewModel.restoreInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(viewModel.isProcessing || restoreInputIsEmpty)
 
             Button("返回") {
                 viewModel.cancelRestore()
@@ -300,10 +324,14 @@ public struct WalletView: View {
             }
 
             Section("积分流水") {
-                NavigationLink {
-                    WalletTransactionView(userHash: userHash, viewModel: viewModel)
-                } label: {
+                NavigationLink(value: WalletDestination.transactions) {
                     Label("查看流水", systemImage: "list.bullet.rectangle")
+                }
+            }
+
+            Section("评价") {
+                NavigationLink(value: WalletDestination.myReviews) {
+                    Label("我的评价", systemImage: "text.bubble")
                 }
             }
 
@@ -326,6 +354,10 @@ public struct WalletView: View {
 
     private var userHash: String { viewModel.userHash }
 
+    private var restoreInputIsEmpty: Bool {
+        viewModel.restoreInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private var todayEstimated: Int {
         let today = viewModel.summary?.today
         return (today?.reviewReward ?? 0) + (today?.likePendingPoints ?? 0)
@@ -344,6 +376,16 @@ public struct WalletView: View {
                 .foregroundStyle(value.hasPrefix("-") ? .red : .primary)
         }
     }
+
+    private func showReviewDetail(_ entry: MyReviewEntry) {
+        navigationPath.append(WalletDestination.reviewDetail(entry))
+    }
+}
+
+private enum WalletDestination: Hashable {
+    case transactions
+    case myReviews
+    case reviewDetail(MyReviewEntry)
 }
 
 // MARK: - Previews

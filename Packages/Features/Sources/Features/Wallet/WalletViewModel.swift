@@ -57,6 +57,7 @@ public final class WalletViewModel {
             userSecret = ""
             balance = nil
             summary = nil
+            resetTransactionHistory()
             phase = .create
         }
     }
@@ -192,6 +193,7 @@ public final class WalletViewModel {
             balance = nil
             summary = nil
             remoteError = nil
+            resetTransactionHistory()
             studentId = ""
             pin = ""
             restoreInput = ""
@@ -210,16 +212,23 @@ public final class WalletViewModel {
 
     public func loadTransactions() async {
         let hash = userHash
-        guard !hash.isEmpty else { return }
+        guard !hash.isEmpty else {
+            resetTransactionHistory()
+            return
+        }
         isLoadingTransactions = true
         transactionError = nil
         transactionPage = 1
+        transactions = []
+        transactionHasMore = false
         defer { isLoadingTransactions = false }
         do {
             let resp = try await walletRepo.fetchTransactionHistory(userHash: hash, page: 1)
+            guard userHash == hash else { return }
             transactions = resp.data
             transactionHasMore = resp.hasMore
         } catch {
+            guard userHash == hash else { return }
             transactionError = error.localizedDescription
         }
     }
@@ -232,16 +241,26 @@ public final class WalletViewModel {
         do {
             let nextPage = transactionPage + 1
             let resp = try await walletRepo.fetchTransactionHistory(userHash: hash, page: nextPage)
+            guard userHash == hash else { return }
             transactions += resp.data
             transactionPage = nextPage
             transactionHasMore = resp.hasMore
         } catch {
+            guard userHash == hash else { return }
             transactionError = error.localizedDescription
         }
     }
 
     public func refreshTransactions() async {
         await loadTransactions()
+    }
+
+    private func resetTransactionHistory() {
+        transactions = []
+        transactionPage = 1
+        transactionHasMore = false
+        isLoadingTransactions = false
+        transactionError = nil
     }
 
     private func walletExists(userHash: String) async throws -> Bool {

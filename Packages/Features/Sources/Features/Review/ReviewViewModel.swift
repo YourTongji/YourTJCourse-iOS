@@ -26,8 +26,11 @@ public final class ReviewViewModel {
     let existingReview: Review?  // nil for new, non-nil for editing
     let mode: ReviewMode
 
+    private let courseDetail: CourseDetail?
+    private let localReviewEntry: MyReviewEntry?
     private let reviewRepo: ReviewRepository
     private let walletRepo: WalletRepository
+    private let localReviewStore: LocalReviewStore
     private let logger = AppLogger(category: "Review")
 
     public enum ReviewMode: Sendable {
@@ -37,15 +40,21 @@ public final class ReviewViewModel {
 
     public init(
         courseId: Int,
+        courseDetail: CourseDetail? = nil,
         existingReview: Review? = nil,
+        localReviewEntry: MyReviewEntry? = nil,
         reviewRepo: ReviewRepository = ReviewRepository(),
-        walletRepo: WalletRepository = WalletRepository()
+        walletRepo: WalletRepository = WalletRepository(),
+        localReviewStore: LocalReviewStore = LocalReviewStore()
     ) {
         self.courseId = courseId
         self.existingReview = existingReview
         self.mode = existingReview != nil ? .edit : .create
+        self.courseDetail = courseDetail
+        self.localReviewEntry = localReviewEntry
         self.reviewRepo = reviewRepo
         self.walletRepo = walletRepo
+        self.localReviewStore = localReviewStore
 
         if let review = existingReview {
             rating = review.rating
@@ -80,10 +89,11 @@ public final class ReviewViewModel {
 
             switch mode {
             case .create:
+                let submittedComment = comment.trimmingCharacters(in: .whitespacesAndNewlines)
                 let response = try await reviewRepo.createReview(
                     courseId: courseId,
                     rating: rating,
-                    comment: comment.trimmingCharacters(in: .whitespacesAndNewlines),
+                    comment: submittedComment,
                     semester: normalizedSemester,
                     turnstileToken: captchaToken,
                     reviewerName: normalizedReviewerName,
@@ -93,6 +103,7 @@ public final class ReviewViewModel {
 
                 creditReward = false
                 var message = "评价发布成功！"
+                var canEdit = false
                 if let reviewId = response.reviewId, let wallet {
                     let token = HMACHelper.editToken(
                         reviewId: reviewId, userSecret: wallet.userSecret)
@@ -102,6 +113,7 @@ public final class ReviewViewModel {
                             editToken: token,
                             walletUserHash: wallet.userHash
                         )
+                        canEdit = tokenResponse.success
                         if tokenResponse.creditReward?.ok == true {
                             creditReward = true
                         }
@@ -110,6 +122,23 @@ public final class ReviewViewModel {
                         logger.error("Failed to bind edit token: \(error.localizedDescription)")
                         message = "评价已提交，但钱包绑定失败：\(error.localizedDescription)"
                     }
+                }
+                if let reviewId = response.reviewId, let courseDetail {
+                    let review = Review(
+                        id: reviewId,
+                        sqid: String(reviewId),
+                        courseId: courseId,
+                        semester: normalizedSemester,
+                        rating: rating,
+                        comment: submittedComment,
+                        createdAt: Date.now.ISO8601Format(),
+                        likeCount: 0,
+                        liked: false,
+                        canEdit: canEdit,
+                        reviewerName: normalizedReviewerName,
+                        reviewerAvatar: normalizedReviewerAvatar
+                    )
+                    localReviewStore.upsertMine(MyReviewEntry(course: courseDetail, review: review))
                 }
                 successMessage = message
                 success = true
@@ -124,11 +153,12 @@ public final class ReviewViewModel {
                 }
 
                 let editToken = HMACHelper.editToken(reviewId: review.id, userSecret: wallet.userSecret)
+                let submittedComment = comment.trimmingCharacters(in: .whitespacesAndNewlines)
 
                 let _ = try await reviewRepo.updateReview(
                     reviewId: review.id,
                     rating: rating,
-                    comment: comment.trimmingCharacters(in: .whitespacesAndNewlines),
+                    comment: submittedComment,
                     semester: normalizedSemester,
                     turnstileToken: captchaToken,
                     editToken: editToken,
@@ -136,6 +166,27 @@ public final class ReviewViewModel {
                     reviewerName: normalizedReviewerName,
                     reviewerAvatar: normalizedReviewerAvatar
                 )
+                let updatedReview = Review(
+                    id: review.id,
+                    sqid: review.sqid,
+                    courseId: review.courseId,
+                    semester: normalizedSemester,
+                    rating: rating,
+                    comment: submittedComment,
+                    createdAt: review.createdAt,
+                    likeCount: review.likeCount,
+                    liked: review.liked,
+                    canEdit: review.canEdit,
+                    reviewerName: normalizedReviewerName,
+                    reviewerAvatar: normalizedReviewerAvatar
+                )
+                if let localReviewEntry {
+                    localReviewStore.upsertMine(localReviewEntry.updatingReview(updatedReview))
+                } else if let courseDetail {
+                    localReviewStore.upsertMine(MyReviewEntry(course: courseDetail, review: updatedReview))
+                } else {
+                    localReviewStore.updateMineReview(updatedReview)
+                }
                 successMessage = "评价修改成功"
                 success = true
             }

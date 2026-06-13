@@ -8,6 +8,8 @@ import DesignSystem
 /// Layout matches Flutter's `_ReviewShareImagePainter`:
 /// brand header → course name + code pill → rating box → reviewer info → info pills → comment → footer.
 public struct ReviewShareImageView: View {
+    private static let maxRenderedCommentCharacters = 700
+
     let courseDetail: CourseDetail
     let review: Review
 
@@ -176,10 +178,10 @@ public struct ReviewShareImageView: View {
                 foreground: Palette.indigoPillFg,
                 background: Palette.indigoPillBg
             )
-            if let credit = courseDetail.credit {
+            if courseDetail.credit > 0 {
                 infoPill(
                     icon: "graduationcap",
-                    text: "\(credit) 学分",
+                    text: "\(formattedCredit) 学分",
                     foreground: Palette.cyanPillFg,
                     background: Palette.cyanPillBg
                 )
@@ -206,10 +208,11 @@ public struct ReviewShareImageView: View {
     // MARK: - Comment
 
     private var commentSection: some View {
-        Text(Self.stripMarkdown(review.comment))
+        Text(renderedComment)
             .font(.system(size: 15))
             .foregroundStyle(Palette.commentText)
             .lineSpacing(6)
+            .lineLimit(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
             .overlay(
@@ -243,6 +246,20 @@ public struct ReviewShareImageView: View {
         let displayFormatter = DateFormatter()
         displayFormatter.dateFormat = "yyyy/MM/dd"
         return displayFormatter.string(from: date)
+    }
+
+    private var formattedCredit: String {
+        courseDetail.credit.formatted(
+            .number.precision(.fractionLength(courseDetail.credit == courseDetail.credit.rounded() ? 0 : 1))
+        )
+    }
+
+    private var renderedComment: String {
+        let text = Self.stripMarkdown(review.comment).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.count > Self.maxRenderedCommentCharacters else {
+            return text
+        }
+        return String(text.prefix(Self.maxRenderedCommentCharacters)) + "..."
     }
 
     static func stripMarkdown(_ markdown: String) -> String {

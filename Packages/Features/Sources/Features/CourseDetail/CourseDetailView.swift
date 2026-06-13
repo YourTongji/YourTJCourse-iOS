@@ -68,10 +68,14 @@ public struct CourseDetailView: View {
             reportSheet
         }
         .sheet(isPresented: $showReviewSheet) {
-            ReviewView(courseId: viewModel.courseId)
+            ReviewView(courseId: viewModel.courseId, courseDetail: viewModel.courseDetail)
         }
         .sheet(item: $reviewToEdit) { review in
-            ReviewView(courseId: viewModel.courseId, existingReview: review)
+            ReviewView(
+                courseId: viewModel.courseId,
+                courseDetail: viewModel.courseDetail,
+                existingReview: review
+            )
         }
         .onChange(of: showReviewSheet) { _, isPresented in
             if !isPresented {
@@ -181,13 +185,7 @@ public struct CourseDetailView: View {
                                     selectedReviewId = review.id
                                     showReportSheet = true
                                 },
-#if os(iOS)
-                                onShare: {
-                                    if let courseDetail = viewModel.courseDetail {
-                                        viewModel.prepareShareImage(for: review, courseDetail: courseDetail)
-                                    }
-                                }
-#endif
+                                onShare: shareAction(for: review)
                             )
                         }
                     }
@@ -513,6 +511,18 @@ public struct CourseDetailView: View {
     private func formattedCredit(_ credit: Double) -> String {
         credit.formatted(.number.precision(.fractionLength(credit == credit.rounded() ? 0 : 1)))
     }
+
+    private func shareAction(for review: Review) -> (() -> Void)? {
+#if os(iOS)
+        {
+            if let courseDetail = viewModel.courseDetail {
+                viewModel.prepareShareImage(for: review, courseDetail: courseDetail)
+            }
+        }
+#else
+        nil
+#endif
+    }
 }
 
 // MARK: - Review Card Component
@@ -525,7 +535,27 @@ struct ReviewCard: View {
     let onEdit: () -> Void
     let onHide: () -> Void
     let onReport: () -> Void
-    let onShare: (() -> Void)? = nil
+    let onShare: (() -> Void)?
+
+    init(
+        review: Review,
+        canEdit: Bool,
+        isLikeUpdating: Bool,
+        onLike: @escaping () -> Void,
+        onEdit: @escaping () -> Void,
+        onHide: @escaping () -> Void,
+        onReport: @escaping () -> Void,
+        onShare: (() -> Void)? = nil
+    ) {
+        self.review = review
+        self.canEdit = canEdit
+        self.isLikeUpdating = isLikeUpdating
+        self.onLike = onLike
+        self.onEdit = onEdit
+        self.onHide = onHide
+        self.onReport = onReport
+        self.onShare = onShare
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

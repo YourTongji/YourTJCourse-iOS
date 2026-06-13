@@ -33,6 +33,7 @@ public final class CourseDetailViewModel {
     private let walletRepo: WalletRepository
     private let hiddenReviewStore: HiddenReviewStore
     private let favoriteStore: CourseFavoriteStore
+    private let localReviewStore: LocalReviewStore
     private let config = APIConfig.default
     private let logger = AppLogger(category: "CourseDetail")
 
@@ -43,7 +44,8 @@ public final class CourseDetailViewModel {
         reviewRepo: ReviewRepository = .init(),
         walletRepo: WalletRepository = .init(),
         hiddenReviewStore: HiddenReviewStore = .init(),
-        favoriteStore: CourseFavoriteStore = .init()
+        favoriteStore: CourseFavoriteStore = .init(),
+        localReviewStore: LocalReviewStore = .init()
     ) {
         self.courseId = courseId
         self.loadsRelatedCourses = loadsRelatedCourses
@@ -52,6 +54,7 @@ public final class CourseDetailViewModel {
         self.walletRepo = walletRepo
         self.hiddenReviewStore = hiddenReviewStore
         self.favoriteStore = favoriteStore
+        self.localReviewStore = localReviewStore
         self.hiddenReviewIds = hiddenReviewStore.load()
         self.isFavorite = favoriteStore.isFavorite(courseId: courseId)
     }
@@ -168,6 +171,9 @@ public final class CourseDetailViewModel {
     }
 
     public func hideReview(reviewId: Int) {
+        if let courseDetail, let review = courseDetail.reviews.first(where: { $0.id == reviewId }) {
+            localReviewStore.upsertHidden(MyReviewEntry(course: courseDetail, review: review))
+        }
         hiddenReviewIds.insert(reviewId)
         hiddenReviewStore.save(hiddenReviewIds)
     }
@@ -179,7 +185,7 @@ public final class CourseDetailViewModel {
 
 #if os(iOS)
     public func prepareShareImage(for review: Review, courseDetail: CourseDetail) {
-        let content = ReviewShareImageView(review: review, courseDetail: courseDetail)
+        let content = ReviewShareImageView(courseDetail: courseDetail, review: review)
             .frame(width: 640)
         let renderer = ImageRenderer(content: content)
         renderer.scale = 3.0

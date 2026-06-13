@@ -1,61 +1,85 @@
 import SwiftUI
-import DataKit
 import DomainKit
 import DesignSystem
 
 public struct MyReviewsView: View {
     @State private var viewModel = MyReviewsViewModel()
+    private let onSelectReview: (MyReviewEntry) -> Void
 
-    public init() {}
+    public init(onSelectReview: @escaping (MyReviewEntry) -> Void = { _ in }) {
+        self.onSelectReview = onSelectReview
+    }
 
     public var body: some View {
-        NavigationStack {
-            Group {
-                if viewModel.isLoading {
-                    ProgressView("加载中…")
-                } else if let error = viewModel.error, viewModel.entries.isEmpty {
-                    ErrorStateView(
-                        message: error,
-                        retryTitle: "重试",
-                        retryAction: { Task { await viewModel.loadMyReviews() } }
-                    )
-                } else if viewModel.entries.isEmpty {
-                    EmptyStateView(
-                        icon: "text.bubble",
-                        message: "你还没有发表过评价"
-                    )
-                } else {
-                    List {
-                        ForEach(viewModel.entries) { entry in
-                            NavigationLink(value: CourseDetailDestination(courseId: entry.courseId)) {
-                                ReviewEntryRow(entry: entry, onEdit: { viewModel.editingEntry = entry })
+        Group {
+            if viewModel.isLoading {
+                ProgressView("加载中…")
+            } else if let error = viewModel.error, viewModel.entries.isEmpty {
+                ErrorStateView(
+                    message: error,
+                    retryTitle: "重试",
+                    retryAction: { Task { await viewModel.loadMyReviews() } }
+                )
+            } else if viewModel.entries.isEmpty {
+                EmptyStateView(
+                    icon: "text.bubble",
+                    message: "还没有在本机写过点评"
+                )
+            } else {
+                List {
+                    ForEach(viewModel.entries) { entry in
+                        HStack(alignment: .center, spacing: 12) {
+                            Button {
+                                onSelectReview(entry)
+                            } label: {
+                                ReviewEntryRow(entry: entry)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+
+                            if entry.canEdit {
+                                Button("编辑") {
+                                    viewModel.editingEntry = entry
+                                }
+                                .font(.caption)
+                                .foregroundStyle(AppColors.cyan)
+                                .buttonStyle(.borderless)
                             }
                         }
                     }
-                    .listStyle(.insetGrouped)
-                    .refreshable { await viewModel.refresh() }
                 }
+                .listStyle(.insetGrouped)
+                .refreshable { await viewModel.refresh() }
             }
-            .navigationTitle("我的评价")
-            .navigationDestination(for: CourseDetailDestination.self) { dest in
-                CourseDetailView(courseId: dest.courseId, showsRelatedCourses: dest.loadsRelatedCourses)
-            }
-            .sheet(item: $viewModel.editingEntry) { entry in
-                ReviewView(courseId: entry.courseId, existingReview: entry.review)
-            }
-            .onChange(of: viewModel.editingEntry) { _, newValue in
-                if newValue == nil {
-                    Task { await viewModel.refresh() }
+        }
+        .navigationTitle("我的评价")
+        .sheet(item: $viewModel.editingEntry) { entry in
+            ReviewView(
+                courseId: entry.courseId,
+                existingReview: entry.review,
+                localReviewEntry: entry,
+                onCompletion: {
+                    viewModel.reloadFromLocalStore()
                 }
+            )
+        }
+        .onChange(of: viewModel.editingEntry) { _, newValue in
+            if newValue == nil {
+                Task { await viewModel.refresh() }
             }
-            .task { await viewModel.loadMyReviews() }
+        }
+        .task { await viewModel.loadMyReviews() }
+        .onAppear {
+            if !viewModel.isLoading {
+                viewModel.reloadFromLocalStore()
+            }
         }
     }
 }
 
 private struct ReviewEntryRow: View {
     let entry: MyReviewEntry
-    let onEdit: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -74,25 +98,24 @@ private struct ReviewEntryRow: View {
 
             HStack {
                 RatingView(rating: Double(entry.rating), size: 12)
-                Text(entry.comment.isEmpty ? "" : String(entry.comment.prefix(60)) + (entry.comment.count > 60 ? "…" : ""))
+                Text(commentPreview)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                 Spacer()
             }
 
-            HStack {
-                Text(entry.createdAt)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                Spacer()
-                if entry.canEdit {
-                    Button("编辑") { onEdit() }
-                        .font(.caption)
-                        .foregroundStyle(AppColors.cyan)
-                }
-            }
+            Text(entry.createdAt)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 4)
+    }
+
+    private var commentPreview: String {
+        guard !entry.comment.isEmpty else { return "" }
+
+        let preview = String(entry.comment.prefix(60))
+        return entry.comment.count > 60 ? "\(preview)…" : preview
     }
 }

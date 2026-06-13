@@ -67,7 +67,6 @@ private struct TransactionRow: View {
         dateFormatter.locale = Locale(identifier: "zh_CN")
         dateFormatter.dateFormat = "MM/dd HH:mm"
 
-        let now = Date()
         let calendar = Calendar.current
         if calendar.isDateInToday(tx.createdAt) {
             return "今天 " + dateFormatter.string(from: tx.createdAt).suffix(5)

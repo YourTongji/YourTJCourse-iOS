@@ -11,12 +11,10 @@ public final class MyReviewsViewModel {
     public private(set) var error: String?
     public var editingEntry: MyReviewEntry?
 
-    private let reviewRepo: ReviewRepository
-    private let walletRepo: WalletRepository
+    private let localReviewStore: LocalReviewStore
 
-    public init(reviewRepo: ReviewRepository = .init(), walletRepo: WalletRepository = .init()) {
-        self.reviewRepo = reviewRepo
-        self.walletRepo = walletRepo
+    public init(localReviewStore: LocalReviewStore = .init()) {
+        self.localReviewStore = localReviewStore
     }
 
     public func loadMyReviews() async {
@@ -24,16 +22,13 @@ public final class MyReviewsViewModel {
         error = nil
         defer { isLoading = false }
 
-        guard let userHash = walletRepo.loadWallet()?.userHash else {
-            error = "请先创建积分钱包"
-            return
-        }
+        entries = localReviewStore.loadMine()
+    }
 
-        do {
-            entries = try await reviewRepo.getMyReviews(walletUserHash: userHash)
-        } catch {
-            self.error = error.localizedDescription
-        }
+    public func reloadFromLocalStore() {
+        error = nil
+        entries = localReviewStore.loadMine()
+        isLoading = false
     }
 
     public func refresh() async {
