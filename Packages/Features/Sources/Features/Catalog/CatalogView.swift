@@ -3,75 +3,100 @@ import DomainKit
 import DesignSystem
 
 public struct CatalogView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var viewModel = CatalogViewModel()
     @State private var showFilter = false
+    @State private var selectedCourseId: Int?
 
     public init() {}
 
     public var body: some View {
+        Group {
+            if horizontalSizeClass == .regular {
+                splitCatalog
+            } else {
+                compactCatalog
+            }
+        }
+        .sheet(isPresented: $showFilter) {
+            FilterSheetView(viewModel: viewModel)
+        }
+        .task {
+            await viewModel.loadInitialIfNeeded()
+            reconcileSelectedCourse()
+        }
+        .onChange(of: viewModel.courses.map(\.id)) { _, _ in
+            reconcileSelectedCourse()
+        }
+    }
+
+    private var compactCatalog: some View {
         NavigationStack {
-            Group {
-                if viewModel.isLoading && viewModel.courses.isEmpty {
-                    LoadingView(message: "加载课程...")
-                } else if let error = viewModel.error, viewModel.courses.isEmpty {
-                    ErrorStateView(
-                        message: error,
-                        retryTitle: "重试",
-                        retryAction: { Task { await viewModel.refresh() } }
-                    )
-                } else if viewModel.courses.isEmpty {
-                    EmptyStateView(
-                        icon: "book.closed",
-                        message: viewModel.searchText.isEmpty ? "暂无课程" : "未找到匹配的课程",
-                        actionTitle: nil,
-                        action: nil
-                    )
+            catalogContent(mode: .compact)
+            .navigationDestination(for: CourseDetailDestination.self) { dest in
+                CourseDetailView(courseId: dest.courseId, showsRelatedCourses: dest.loadsRelatedCourses)
+            }
+            .catalogChrome(
+                searchText: $viewModel.searchText,
+                showFilter: $showFilter
+            )
+        }
+    }
+
+    private var splitCatalog: some View {
+        NavigationSplitView {
+            catalogContent(mode: .split)
+                .catalogChrome(
+                    searchText: $viewModel.searchText,
+                    showFilter: $showFilter
+                )
+        } detail: {
+            NavigationStack {
+                if let selectedCourseId {
+                    CourseDetailView(courseId: selectedCourseId)
+                        .id(selectedCourseId)
                 } else {
-                    courseList
+                    ContentUnavailableView(
+                        "选择课程",
+                        systemImage: "book.closed",
+                        description: Text("从左侧列表选择一门课程查看详情和课评。")
+                    )
                 }
             }
             .navigationDestination(for: CourseDetailDestination.self) { dest in
                 CourseDetailView(courseId: dest.courseId, showsRelatedCourses: dest.loadsRelatedCourses)
+                    .id(dest.courseId)
             }
-            .navigationTitle("课程")
-            .searchable(text: $viewModel.searchText, prompt: "搜索课程、教师、课号")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showFilter = true
-                    } label: {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                    }
-                    .accessibilityLabel("筛选")
-                }
-            }
-            .sheet(isPresented: $showFilter) {
-                FilterSheetView(viewModel: viewModel)
-            }
-            .task {
-                await viewModel.loadInitialIfNeeded()
-            }
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    @ViewBuilder
+    private func catalogContent(mode: CatalogNavigationMode) -> some View {
+        if viewModel.isLoading && viewModel.courses.isEmpty {
+            LoadingView(message: "加载课程...")
+        } else if let error = viewModel.error, viewModel.courses.isEmpty {
+            ErrorStateView(
+                message: error,
+                retryTitle: "重试",
+                retryAction: { Task { await viewModel.refresh() } }
+            )
+        } else if viewModel.courses.isEmpty {
+            EmptyStateView(
+                icon: "book.closed",
+                message: viewModel.searchText.isEmpty ? "暂无课程" : "未找到匹配的课程",
+                actionTitle: nil,
+                action: nil
+            )
+        } else {
+            courseList(mode: mode)
         }
     }
 
-    private var courseList: some View {
+    private func courseList(mode: CatalogNavigationMode) -> some View {
         List {
             ForEach(viewModel.courses) { course in
-                NavigationLink {
-                    CourseDetailView(courseId: course.id)
-                } label: {
-                    CourseCard(
-                        name: course.name,
-                        code: course.code,
-                        teacher: course.teacherName,
-                        department: course.department,
-                        rating: course.rating,
-                        reviewCount: course.reviewCount,
-                        credit: course.credit,
-                        semesterTags: course.semesters
-                    )
-                }
-                .buttonStyle(.plain)
+                courseRow(course, mode: mode)
                 .onAppear {
                     if course.id == viewModel.courses.last?.id {
                         Task { await viewModel.loadMore() }
@@ -92,6 +117,78 @@ public struct CatalogView: View {
         .refreshable {
             await viewModel.refresh()
         }
+    }
+
+    @ViewBuilder
+    private func courseRow(_ course: Course, mode: CatalogNavigationMode) -> some View {
+        switch mode {
+        case .compact:
+            NavigationLink(value: CourseDetailDestination(courseId: course.id)) {
+                courseCard(course)
+            }
+            .buttonStyle(.plain)
+        case .split:
+            Button {
+                selectedCourseId = course.id
+            } label: {
+                courseCard(course)
+            }
+            .buttonStyle(.plain)
+            .listRowBackground(course.id == selectedCourseId ? AppColors.cyan.opacity(0.08) : Color.clear)
+        }
+    }
+
+    private func courseCard(_ course: Course) -> CourseCard {
+        CourseCard(
+            name: course.name,
+            code: course.code,
+            teacher: course.teacherName,
+            department: course.department,
+            rating: course.rating,
+            reviewCount: course.reviewCount,
+            credit: course.credit,
+            semesterTags: course.semesters
+        )
+    }
+
+    private func reconcileSelectedCourse() {
+        let courseIds = Set(viewModel.courses.map(\.id))
+        if let selectedCourseId, courseIds.contains(selectedCourseId) {
+            return
+        }
+        selectedCourseId = viewModel.courses.first?.id
+    }
+}
+
+private enum CatalogNavigationMode {
+    case compact
+    case split
+}
+
+private struct CatalogChromeModifier: ViewModifier {
+    @Binding var searchText: String
+    @Binding var showFilter: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .navigationTitle("课程")
+            .searchable(text: $searchText, prompt: "搜索课程、教师、课号")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showFilter = true
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                    }
+                    .accessibilityLabel("筛选")
+                }
+            }
+    }
+}
+
+private extension View {
+    func catalogChrome(searchText: Binding<String>, showFilter: Binding<Bool>) -> some View {
+        modifier(CatalogChromeModifier(searchText: searchText, showFilter: showFilter))
     }
 }
 
