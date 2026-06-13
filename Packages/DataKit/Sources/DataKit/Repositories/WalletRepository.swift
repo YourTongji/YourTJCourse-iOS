@@ -89,4 +89,8 @@ public struct WalletRepository: Sendable {
     public func fetchJCourseSummary(userHash: String) async throws -> WalletSummary {
         try await creditClient.fetchJCourseSummary(userHash: userHash)
     }
+
+    public func fetchTransactionHistory(userHash: String, page: Int = 1, limit: Int = 20) async throws -> PaginatedResponse<WalletTransaction> {
+        try await creditClient.fetchTransactionHistory(userHash: userHash, page: page, limit: limit)
+    }
 }

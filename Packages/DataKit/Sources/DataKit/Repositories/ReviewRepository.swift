@@ -139,6 +139,7 @@ public struct ReviewRepository: Sendable {
         let body = ReportRequest(reason: reason.rawValue, clientId: clientId)
         return try await client.post("/api/review/\(reviewId)/report", body: body)
     }
+
 }
 
 // MARK: - Request Types (private)

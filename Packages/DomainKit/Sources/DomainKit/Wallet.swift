@@ -164,3 +164,54 @@ public struct WalletTodaySummary: Codable, Equatable, Sendable {
         likePendingNegative = try container.decodeIfPresent(Int.self, forKey: .likePendingNegative) ?? 0
     }
 }
+
+public struct WalletTransaction: Codable, Equatable, Sendable, Identifiable {
+    public let id: Int
+    public let txId: String
+    public let typeName: String
+    public let typeDisplayName: String
+    public let fromUserHash: String?
+    public let toUserHash: String?
+    public let amount: Int
+    public let status: String
+    public let title: String
+    public let description: String?
+    public let createdAt: Date
+    public let completedAt: Date?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case txId = "tx_id"
+        case typeName = "type_name"
+        case typeDisplayName = "type_display_name"
+        case fromUserHash = "from_user_hash"
+        case toUserHash = "to_user_hash"
+        case amount
+        case status
+        case title
+        case description
+        case createdAt = "created_at"
+        case completedAt = "completed_at"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        txId = try container.decodeIfPresent(String.self, forKey: .txId) ?? ""
+        typeName = try container.decodeIfPresent(String.self, forKey: .typeName) ?? ""
+        typeDisplayName = try container.decodeIfPresent(String.self, forKey: .typeDisplayName) ?? ""
+        fromUserHash = try container.decodeIfPresent(String.self, forKey: .fromUserHash)
+        toUserHash = try container.decodeIfPresent(String.self, forKey: .toUserHash)
+        amount = try container.decode(Int.self, forKey: .amount)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "completed"
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        let createdAtMs = try container.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0
+        createdAt = Date(timeIntervalSince1970: TimeInterval(createdAtMs) / 1000.0)
+        if let completedAtMs = try container.decodeIfPresent(Int64.self, forKey: .completedAt) {
+            completedAt = Date(timeIntervalSince1970: TimeInterval(completedAtMs) / 1000.0)
+        } else {
+            completedAt = nil
+        }
+    }
+}
