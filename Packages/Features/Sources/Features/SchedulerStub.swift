@@ -151,7 +151,7 @@ public struct SchedulerView: View {
     @State private var showsFavoriteImport = false
     @State private var showSyncChanges = false
     @State private var reviewTarget: SchedulerReviewTarget?
-    @State private var schedulerDetailPath: [SchedulerReviewTarget] = []
+    @State private var schedulerDetailPath = NavigationPath()
 
     public init() {
         self._viewModel = State(initialValue: SchedulerViewModel())
@@ -236,6 +236,9 @@ public struct SchedulerView: View {
             .navigationDestination(item: $reviewTarget) { target in
                 reviewDestination(for: target)
             }
+            .navigationDestination(for: CourseDetailDestination.self) { destination in
+                courseDetailDestination(for: destination)
+            }
             .toolbar {
                 clearToolbarItem
             }
@@ -268,6 +271,9 @@ public struct SchedulerView: View {
                 .navigationDestination(for: SchedulerReviewTarget.self) { target in
                     reviewDestination(for: target)
                 }
+                .navigationDestination(for: CourseDetailDestination.self) { destination in
+                    courseDetailDestination(for: destination)
+                }
             }
         }
         .navigationSplitViewStyle(.balanced)
@@ -291,6 +297,11 @@ public struct SchedulerView: View {
             teacherName: target.teacherName,
             teacherCode: target.teacherCode
         )
+    }
+
+    private func courseDetailDestination(for destination: CourseDetailDestination) -> some View {
+        CourseDetailView(courseId: destination.courseId, showsRelatedCourses: destination.loadsRelatedCourses)
+            .id(destination.courseId)
     }
 
     // All four pages are kept alive in a ZStack and toggled via opacity so each
@@ -737,7 +748,9 @@ public struct SchedulerView: View {
 
     private func showReview(_ target: SchedulerReviewTarget) {
         if horizontalSizeClass == .regular {
-            schedulerDetailPath = [target]
+            var path = NavigationPath()
+            path.append(target)
+            schedulerDetailPath = path
         } else {
             reviewTarget = target
         }
