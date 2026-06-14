@@ -151,6 +151,7 @@ public struct SchedulerView: View {
     @State private var showsFavoriteImport = false
     @State private var showSyncChanges = false
     @State private var reviewTarget: SchedulerReviewTarget?
+    @State private var schedulerDetailPath: [SchedulerReviewTarget] = []
 
     public init() {
         self._viewModel = State(initialValue: SchedulerViewModel())
@@ -253,20 +254,20 @@ public struct SchedulerView: View {
             }
             .refreshable { await viewModel.load() }
             .navigationTitle("排课")
-            .navigationDestination(item: $reviewTarget) { target in
-                reviewDestination(for: target)
-            }
             .toolbar {
                 clearToolbarItem
             }
         } detail: {
-            NavigationStack {
+            NavigationStack(path: $schedulerDetailPath) {
                 List {
                     timetableSection
                 }
                 .refreshable { await viewModel.load() }
                 .navigationTitle("周课表")
                 .navigationBarTitleDisplayMode(.inline)
+                .navigationDestination(for: SchedulerReviewTarget.self) { target in
+                    reviewDestination(for: target)
+                }
             }
         }
         .navigationSplitViewStyle(.balanced)
@@ -711,9 +712,11 @@ public struct SchedulerView: View {
                             viewModel.remove(course: course, teachingClass: teachingClass)
                         },
                         onShowReview: { teachingClass in
-                            reviewTarget = SchedulerReviewTarget(
-                                courseCode: course.courseCode,
-                                teachingClass: teachingClass
+                            showReview(
+                                SchedulerReviewTarget(
+                                    courseCode: course.courseCode,
+                                    teachingClass: teachingClass
+                                )
                             )
                         }
                     )
@@ -729,6 +732,14 @@ public struct SchedulerView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+
+    private func showReview(_ target: SchedulerReviewTarget) {
+        if horizontalSizeClass == .regular {
+            schedulerDetailPath = [target]
+        } else {
+            reviewTarget = target
         }
     }
 
