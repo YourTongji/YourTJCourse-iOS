@@ -233,15 +233,15 @@ public struct SchedulerView: View {
                 pageContent
             }
             .navigationTitle("排课")
-            .navigationDestination(item: $reviewTarget) { target in
-                reviewDestination(for: target)
-            }
-            .navigationDestination(for: CourseDetailDestination.self) { destination in
-                courseDetailDestination(for: destination)
-            }
             .toolbar {
                 clearToolbarItem
             }
+        }
+        .navigationDestination(item: $reviewTarget) { target in
+            reviewDestination(for: target)
+        }
+        .navigationDestination(for: CourseDetailDestination.self) { destination in
+            courseDetailDestination(for: destination)
         }
     }
 
@@ -268,12 +268,12 @@ public struct SchedulerView: View {
                 .refreshable { await viewModel.load() }
                 .navigationTitle("周课表")
                 .navigationBarTitleDisplayMode(.inline)
-                .navigationDestination(for: SchedulerReviewTarget.self) { target in
-                    reviewDestination(for: target)
-                }
-                .navigationDestination(for: CourseDetailDestination.self) { destination in
-                    courseDetailDestination(for: destination)
-                }
+            }
+            .navigationDestination(for: SchedulerReviewTarget.self) { target in
+                reviewDestination(for: target)
+            }
+            .navigationDestination(for: CourseDetailDestination.self) { destination in
+                courseDetailDestination(for: destination)
             }
         }
         .navigationSplitViewStyle(.balanced)
@@ -2170,10 +2170,7 @@ private struct SchedulerCourseByCodeView: View {
             case .loading:
                 LoadingView(message: "正在查找评课...")
             case .loaded(let courseId):
-                // The user already picked a specific teaching class, so don't show
-                // the "same course other teachers" related section (which lists the
-                // course's other parallel teaching classes).
-                CourseDetailView(courseId: courseId, showsRelatedCourses: false)
+                CourseDetailView(courseId: courseId, showsRelatedCourses: true)
             case .failed(let message):
                 ErrorStateView(message: message) {
                     Task { await load() }
