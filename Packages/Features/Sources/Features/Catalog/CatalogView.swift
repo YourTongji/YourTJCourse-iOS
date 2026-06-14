@@ -7,6 +7,7 @@ public struct CatalogView: View {
     @State private var viewModel = CatalogViewModel()
     @State private var showFilter = false
     @State private var selectedCourseId: Int?
+    @State private var detailPath: [CourseDetailDestination] = []
 
     public init() {}
 
@@ -27,6 +28,11 @@ public struct CatalogView: View {
         }
         .onChange(of: viewModel.courses.map(\.id)) { _, _ in
             reconcileSelectedCourse()
+        }
+        .onChange(of: viewModel.isLoading) { _, isLoading in
+            if !isLoading {
+                reconcileSelectedCourse()
+            }
         }
     }
 
@@ -51,7 +57,7 @@ public struct CatalogView: View {
                     showFilter: $showFilter
                 )
         } detail: {
-            NavigationStack {
+            NavigationStack(path: $detailPath) {
                 if let selectedCourseId {
                     CourseDetailView(courseId: selectedCourseId)
                         .id(selectedCourseId)
@@ -129,7 +135,7 @@ public struct CatalogView: View {
             .buttonStyle(.plain)
         case .split:
             Button {
-                selectedCourseId = course.id
+                selectCourse(course.id)
             } label: {
                 courseCard(course)
             }
@@ -152,11 +158,25 @@ public struct CatalogView: View {
     }
 
     private func reconcileSelectedCourse() {
+        if viewModel.courses.isEmpty {
+            guard !viewModel.isLoading else { return }
+            selectedCourseId = nil
+            detailPath = []
+            return
+        }
+
         let courseIds = Set(viewModel.courses.map(\.id))
         if let selectedCourseId, courseIds.contains(selectedCourseId) {
             return
         }
-        selectedCourseId = viewModel.courses.first?.id
+        if let firstCourseId = viewModel.courses.first?.id {
+            selectCourse(firstCourseId)
+        }
+    }
+
+    private func selectCourse(_ courseId: Int) {
+        selectedCourseId = courseId
+        detailPath = []
     }
 }
 
