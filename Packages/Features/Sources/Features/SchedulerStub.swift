@@ -143,6 +143,7 @@ fileprivate struct SchedulerCourseReviewInfo: Equatable, Sendable {
 }
 
 public struct SchedulerView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var viewModel: SchedulerViewModel
     @State private var selectedPage: SchedulerPage = .filters
     @State private var activeTimetableSlot: SchedulerTimetableSlot?
@@ -150,12 +151,73 @@ public struct SchedulerView: View {
     @State private var showsFavoriteImport = false
     @State private var showSyncChanges = false
     @State private var reviewTarget: SchedulerReviewTarget?
+    @State private var schedulerDetailPath = NavigationPath()
 
     public init() {
         self._viewModel = State(initialValue: SchedulerViewModel())
     }
 
     public var body: some View {
+        Group {
+            if horizontalSizeClass == .regular {
+                regularLayout
+            } else {
+                compactLayout
+            }
+        }
+        .task { await viewModel.load() }
+        .onAppear {
+            viewModel.refreshFavorites()
+            Task { await viewModel.syncSelectedClasses() }
+        }
+        .onChange(of: viewModel.unacknowledgedChangeCount) { _, count in
+            if count > 0 { showSyncChanges = true }
+        }
+        .sheet(isPresented: $showSyncChanges) {
+            SyncChangeSheet(viewModel: viewModel)
+        }
+        .onChange(of: viewModel.selectedCalendarId) { _, _ in
+            Task { await viewModel.calendarChanged() }
+        }
+        .onChange(of: viewModel.selectedGrade) { _, _ in
+            Task { await viewModel.gradeChanged() }
+        }
+        .sheet(item: $activeTimetableSlot) { slot in
+            SchedulerSlotSheet(
+                viewModel: viewModel,
+                slot: slot,
+                onDismiss: { activeTimetableSlot = nil }
+            )
+        }
+        .sheet(isPresented: $showsFavoriteImport) {
+            SchedulerFavoriteImportSheet(
+                viewModel: viewModel,
+                onDismiss: { showsFavoriteImport = false }
+            )
+        }
+        .confirmationDialog(
+            "清空排课数据？",
+            isPresented: $showsClearConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("清空候选和已选课程", role: .destructive) {
+                viewModel.clearPlannerData()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("当前候选列表、已选课程和课表数据都会被删除，筛选条件会保留。")
+        }
+        .alert("提示", isPresented: .init(
+            get: { viewModel.error != nil },
+            set: { if !$0 { viewModel.dismissError() } }
+        )) {
+            Button("好", role: .cancel) { viewModel.dismissError() }
+        } message: {
+            Text(viewModel.error ?? "")
+        }
+    }
+
+    private var compactLayout: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 Picker("排课页面", selection: $selectedPage) {
@@ -171,75 +233,75 @@ public struct SchedulerView: View {
                 pageContent
             }
             .navigationTitle("排课")
-            .navigationDestination(item: $reviewTarget) { target in
-                SchedulerCourseByCodeView(
-                    courseCode: target.courseCode,
-                    teacherName: target.teacherName,
-                    teacherCode: target.teacherCode
-                )
-            }
-            .task { await viewModel.load() }
-            .onAppear {
-                viewModel.refreshFavorites()
-                Task { await viewModel.syncSelectedClasses() }
-            }
-            .onChange(of: viewModel.unacknowledgedChangeCount) { _, count in
-                if count > 0 { showSyncChanges = true }
-            }
-            .sheet(isPresented: $showSyncChanges) {
-                SyncChangeSheet(viewModel: viewModel)
-            }
-            .onChange(of: viewModel.selectedCalendarId) { _, _ in
-                Task { await viewModel.calendarChanged() }
-            }
-            .onChange(of: viewModel.selectedGrade) { _, _ in
-                Task { await viewModel.gradeChanged() }
-            }
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showsClearConfirmation = true
-                    } label: {
-                        Image(systemName: "trash")
-                    }
-                    .disabled(!viewModel.hasPlannerData)
-                    .accessibilityLabel("清空排课数据")
-                }
-            }
-            .sheet(item: $activeTimetableSlot) { slot in
-                SchedulerSlotSheet(
-                    viewModel: viewModel,
-                    slot: slot,
-                    onDismiss: { activeTimetableSlot = nil }
-                )
-            }
-            .sheet(isPresented: $showsFavoriteImport) {
-                SchedulerFavoriteImportSheet(
-                    viewModel: viewModel,
-                    onDismiss: { showsFavoriteImport = false }
-                )
-            }
-            .confirmationDialog(
-                "清空排课数据？",
-                isPresented: $showsClearConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button("清空候选和已选课程", role: .destructive) {
-                    viewModel.clearPlannerData()
-                }
-                Button("取消", role: .cancel) {}
-            } message: {
-                Text("当前候选列表、已选课程和课表数据都会被删除，筛选条件会保留。")
-            }
-            .alert("提示", isPresented: .init(
-                get: { viewModel.error != nil },
-                set: { if !$0 { viewModel.dismissError() } }
-            )) {
-                Button("好", role: .cancel) { viewModel.dismissError() }
-            } message: {
-                Text(viewModel.error ?? "")
+                clearToolbarItem
             }
         }
+        .navigationDestination(item: $reviewTarget) { target in
+            reviewDestination(for: target)
+        }
+        .navigationDestination(for: CourseDetailDestination.self) { destination in
+            courseDetailDestination(for: destination)
+        }
+    }
+
+    private var regularLayout: some View {
+        NavigationSplitView {
+            List {
+                filterSection
+                majorSection
+                timeLookupSection
+                favoriteImportSection
+                resultsSection
+                selectedPageSection
+            }
+            .refreshable { await viewModel.load() }
+            .navigationTitle("排课")
+            .toolbar {
+                clearToolbarItem
+            }
+        } detail: {
+            NavigationStack(path: $schedulerDetailPath) {
+                List {
+                    timetableSection
+                }
+                .refreshable { await viewModel.load() }
+                .navigationTitle("周课表")
+                .navigationBarTitleDisplayMode(.inline)
+            }
+            .navigationDestination(for: SchedulerReviewTarget.self) { target in
+                reviewDestination(for: target)
+            }
+            .navigationDestination(for: CourseDetailDestination.self) { destination in
+                courseDetailDestination(for: destination)
+            }
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    private var clearToolbarItem: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                showsClearConfirmation = true
+            } label: {
+                Image(systemName: "trash")
+            }
+            .disabled(!viewModel.hasPlannerData)
+            .accessibilityLabel("清空排课数据")
+        }
+    }
+
+    private func reviewDestination(for target: SchedulerReviewTarget) -> some View {
+        SchedulerCourseByCodeView(
+            courseCode: target.courseCode,
+            teacherName: target.teacherName,
+            teacherCode: target.teacherCode
+        )
+    }
+
+    private func courseDetailDestination(for destination: CourseDetailDestination) -> some View {
+        CourseDetailView(courseId: destination.courseId, showsRelatedCourses: destination.loadsRelatedCourses)
+            .id(destination.courseId)
     }
 
     // All four pages are kept alive in a ZStack and toggled via opacity so each
@@ -661,9 +723,11 @@ public struct SchedulerView: View {
                             viewModel.remove(course: course, teachingClass: teachingClass)
                         },
                         onShowReview: { teachingClass in
-                            reviewTarget = SchedulerReviewTarget(
-                                courseCode: course.courseCode,
-                                teachingClass: teachingClass
+                            showReview(
+                                SchedulerReviewTarget(
+                                    courseCode: course.courseCode,
+                                    teachingClass: teachingClass
+                                )
                             )
                         }
                     )
@@ -679,6 +743,16 @@ public struct SchedulerView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+
+    private func showReview(_ target: SchedulerReviewTarget) {
+        if horizontalSizeClass == .regular {
+            var path = NavigationPath()
+            path.append(target)
+            schedulerDetailPath = path
+        } else {
+            reviewTarget = target
         }
     }
 
@@ -2224,10 +2298,7 @@ private struct SchedulerCourseByCodeView: View {
             case .loading:
                 LoadingView(message: "正在查找评课...")
             case .loaded(let courseId):
-                // The user already picked a specific teaching class, so don't show
-                // the "same course other teachers" related section (which lists the
-                // course's other parallel teaching classes).
-                CourseDetailView(courseId: courseId, showsRelatedCourses: false)
+                CourseDetailView(courseId: courseId, showsRelatedCourses: true)
             case .failed(let message):
                 ErrorStateView(message: message) {
                     Task { await load() }
